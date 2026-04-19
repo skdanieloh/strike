@@ -9,7 +9,8 @@ import {
 
 // --- Constants ---
 const CANVAS_W = 800;
-const CANVAS_H = 600;
+/** 세로로 긴 플레이 영역 (데스크톱/모바일 공통 논리 해상도) */
+const CANVAS_H = 920;
 const AUTO_FIRE_MS = 300;
 const ENEMY_SPAWN_MIN_MS = 1000;
 const ENEMY_SPAWN_MAX_MS = 2000;
@@ -46,7 +47,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.4.0";
+const GAME_VERSION = "0.5.0";
 const STAGE_INTRO_MS = 2400;
 
 // --- TypeScript types ---
@@ -846,8 +847,7 @@ export default function Home() {
       <header className="game-page__header">
         <h1>Sky Strike</h1>
         <p className="game-page__hint">
-          PC: WASD / 방향키 · 모바일: 하단 버튼 · 자동 발사 300ms · 스테이지마다 Lv10
-          보스
+          PC: WASD / 방향키 / 하단 키패드 · 자동 발사 300ms · 스테이지마다 Lv10 보스
         </p>
       </header>
 
@@ -861,17 +861,7 @@ export default function Home() {
       </div>
 
       <div className="game-page__bottom">
-        <div className="mobile-pad" aria-label="이동 버튼">
-          <span className="pad-spacer" />
-          <button
-            type="button"
-            className="pad-btn"
-            aria-label="위"
-            {...bindPadKey("ArrowUp")}
-          >
-            ↑
-          </button>
-          <span className="pad-spacer" />
+        <div className="mobile-pad" aria-label="이동 버튼 (가로)">
           <button
             type="button"
             className="pad-btn"
@@ -880,16 +870,14 @@ export default function Home() {
           >
             ←
           </button>
-          <span className="pad-spacer" />
           <button
             type="button"
             className="pad-btn"
-            aria-label="오른쪽"
-            {...bindPadKey("ArrowRight")}
+            aria-label="위"
+            {...bindPadKey("ArrowUp")}
           >
-            →
+            ↑
           </button>
-          <span className="pad-spacer" />
           <button
             type="button"
             className="pad-btn"
@@ -898,7 +886,14 @@ export default function Home() {
           >
             ↓
           </button>
-          <span className="pad-spacer" />
+          <button
+            type="button"
+            className="pad-btn"
+            aria-label="오른쪽"
+            {...bindPadKey("ArrowRight")}
+          >
+            →
+          </button>
         </div>
         <p className="game-page__version">업데이트 v{GAME_VERSION}</p>
       </div>
