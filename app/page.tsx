@@ -45,6 +45,9 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 /** 적 탄이 플레이어에게 맞기 시작하기까지 (생성 위치 겹침 방지) */
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
+/** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
+const GAME_VERSION = "0.4.0";
+const STAGE_INTRO_MS = 2400;
 
 // --- TypeScript types ---
 type Player = {
@@ -121,7 +124,7 @@ type EnemyBullet = {
   armedAfter: number;
 };
 
-type GamePhase = "playing" | "gameover" | "victory";
+type GamePhase = "playing" | "gameover";
 
 type GameModel = {
   player: Player;
@@ -140,6 +143,10 @@ type GameModel = {
   nextId: number;
   /** 이 시각(ms)까지 플레이어 피해 무시 (보스 진입 등) */
   playerInvulnerableUntil: number;
+  /** 1부터 시작, 보스 격파 시 증가 */
+  stage: number;
+  /** 이 시각까지 스테이지 시작 안내 오버레이 */
+  stageIntroUntil: number;
 };
 
 // --- Pure helpers ---
@@ -174,6 +181,11 @@ function loadRanking(): number[] {
   } catch {
     return [];
   }
+}
+
+/** 스테이지가 올라갈수록 체력·공격·속도 배율 */
+function getStageDifficulty(stage: number): number {
+  return 1 + Math.max(0, stage - 1) * 0.26;
 }
 
 function saveRankingScore(score: number): number[] {
@@ -213,13 +225,18 @@ function createGameModel(): GameModel {
     items: [],
     keys: {},
     nextEnemySpawnAt: performance.now() + 500,
-    nextEnemySpawnDelay: randBetween(ENEMY_SPAWN_MIN_MS, ENEMY_SPAWN_MAX_MS),
+    nextEnemySpawnDelay: randBetween(
+      ENEMY_SPAWN_MIN_MS * spawnIntervalScale(1),
+      ENEMY_SPAWN_MAX_MS * spawnIntervalScale(1)
+    ),
     lastPlayerShot: 0,
     score: 0,
     phase: "playing",
     bossSpawned: false,
     nextId: 1,
     playerInvulnerableUntil: 0,
+    stage: 1,
+    stageIntroUntil: 0,
   };
 }
 
@@ -234,14 +251,19 @@ function nextId(g: GameModel): number {
 }
 
 function spawnEnemy(g: GameModel, playerX: number): void {
+  const mult = getStageDifficulty(g.stage);
   const w = ENEMY_BASE_W;
   const h = ENEMY_BASE_H;
   const x = randBetween(16, CANVAS_W - w - 16);
   const y = -h;
-  const vy = randBetween(70, 130);
+  const speedMult = 1 + (g.stage - 1) * 0.07;
+  const vy = randBetween(70, 130) * speedMult;
   const track = randBetween(0.35, 0.85);
   const toPlayer = playerX + PLAYER_W / 2 - (x + w / 2);
   const vx = Math.max(-80, Math.min(80, toPlayer * track * 0.02));
+
+  const hp = Math.round(NORMAL_ENEMY_MAX_HP * mult);
+  const dmg = Math.round(38 * mult);
 
   g.enemies.push({
     id: nextId(g),
@@ -249,16 +271,18 @@ function spawnEnemy(g: GameModel, playerX: number): void {
     y,
     w,
     h,
-    hp: NORMAL_ENEMY_MAX_HP,
-    maxHp: NORMAL_ENEMY_MAX_HP,
-    damage: 38,
+    hp,
+    maxHp: hp,
+    damage: dmg,
     vx,
     vy,
   });
 }
 
 function spawnBoss(g: GameModel, now: number): void {
-  const maxHp = NORMAL_ENEMY_MAX_HP * BOSS_HP_MULT;
+  const mult = getStageDifficulty(g.stage);
+  const maxHp = Math.round(NORMAL_ENEMY_MAX_HP * BOSS_HP_MULT * mult);
+  const dmg = Math.round(55 * mult);
   g.enemies = [];
   g.boss = {
     id: nextId(g),
@@ -268,7 +292,7 @@ function spawnBoss(g: GameModel, now: number): void {
     h: BOSS_H,
     hp: maxHp,
     maxHp,
-    damage: 55,
+    damage: dmg,
     /** rAF 타임스탬프와 통일 — 첫 발사는 지연 후에만 */
     lastShot: now + BOSS_FIRST_SHOT_DELAY_MS,
   };
@@ -318,6 +342,38 @@ function tryDropItem(g: GameModel, ex: number, ey: number): void {
   });
 }
 
+function advanceStageAfterBoss(g: GameModel, now: number): void {
+  g.stage += 1;
+  g.boss = null;
+  g.bossSpawned = false;
+  g.missiles = [];
+  g.enemyBullets = [];
+  g.items = [];
+  g.enemies = [];
+
+  const p = g.player;
+  p.level = 1;
+  p.exp = 0;
+  p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.42));
+
+  g.nextEnemySpawnAt = now + 1100;
+  g.nextEnemySpawnDelay = randBetween(
+    ENEMY_SPAWN_MIN_MS * spawnIntervalScale(g.stage),
+    ENEMY_SPAWN_MAX_MS * spawnIntervalScale(g.stage)
+  );
+  g.lastPlayerShot = now;
+  g.stageIntroUntil = now + STAGE_INTRO_MS;
+  g.playerInvulnerableUntil = Math.max(
+    g.playerInvulnerableUntil,
+    now + 1600
+  );
+  g.phase = "playing";
+}
+
+function spawnIntervalScale(stage: number): number {
+  return Math.max(0.68, 1 - (stage - 1) * 0.05);
+}
+
 function applyLevelUps(g: GameModel, now: number): void {
   const p = g.player;
   while (p.exp >= expToNextLevel(p.level)) {
@@ -334,7 +390,11 @@ function applyLevelUps(g: GameModel, now: number): void {
 }
 
 function bossShoot(g: GameModel, b: Boss, px: number, py: number, now: number): void {
-  if (now - b.lastShot < BOSS_SHOOT_MS) return;
+  const shootEvery = Math.max(
+    380,
+    BOSS_SHOOT_MS - (g.stage - 1) * 32
+  );
+  if (now - b.lastShot < shootEvery) return;
   b.lastShot = now;
 
   const cx = b.x + b.w / 2 - ENEMY_BULLET_W / 2;
@@ -347,7 +407,7 @@ function bossShoot(g: GameModel, b: Boss, px: number, py: number, now: number): 
   const dx = tx - aimX;
   const dy = ty - aimY;
   const len = Math.hypot(dx, dy) || 1;
-  const speed = ENEMY_BULLET_SPEED;
+  const speed = ENEMY_BULLET_SPEED * (1 + (g.stage - 1) * 0.05);
   const vx = (dx / len) * speed;
   const vy = (dy / len) * speed;
 
@@ -357,7 +417,7 @@ function bossShoot(g: GameModel, b: Boss, px: number, py: number, now: number): 
     y: cy,
     w: ENEMY_BULLET_W,
     h: ENEMY_BULLET_H,
-    damage: Math.min(b.damage, 28),
+    damage: Math.min(b.damage, Math.round(28 * getStageDifficulty(g.stage))),
     vx,
     vy,
     armedAfter: now + ENEMY_BULLET_ARM_MS,
@@ -368,7 +428,8 @@ function bossShoot(g: GameModel, b: Boss, px: number, py: number, now: number): 
 function drawGame(
   ctx: CanvasRenderingContext2D,
   g: GameModel,
-  ranking: number[] | null
+  ranking: number[] | null,
+  now: number
 ): void {
   ctx.fillStyle = "#0b1220";
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
@@ -465,10 +526,34 @@ function drawGame(
 
   ctx.fillStyle = "#f9fafb";
   ctx.font = "14px ui-monospace, monospace";
-  ctx.fillText(`Lv ${p.level}`, 12, 62);
-  ctx.fillText(`Score ${g.score}`, 100, 62);
-  ctx.fillText(`Missiles ${p.missileCount}`, 240, 62);
-  ctx.fillText(`ATK ${p.attack}`, 380, 62);
+  ctx.fillText(`St ${g.stage}`, 12, 62);
+  ctx.fillText(`Lv ${p.level}`, 56, 62);
+  ctx.fillText(`Score ${g.score}`, 130, 62);
+  ctx.fillText(`Msl ${p.missileCount}`, 280, 62);
+  ctx.fillText(`ATK ${p.attack}`, 400, 62);
+
+  ctx.fillStyle = "#64748b";
+  ctx.font = "11px ui-monospace, monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(
+    `Sky Strike · v${GAME_VERSION}`,
+    CANVAS_W / 2,
+    CANVAS_H - 8
+  );
+  ctx.textAlign = "left";
+
+  if (g.phase === "playing" && now < g.stageIntroUntil) {
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.fillStyle = "#a7f3d0";
+    ctx.font = "bold 28px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(`STAGE ${g.stage}`, CANVAS_W / 2, CANVAS_H / 2 - 8);
+    ctx.fillStyle = "#cbd5e1";
+    ctx.font = "15px ui-monospace, monospace";
+    ctx.fillText("적이 더 강해졌습니다", CANVAS_W / 2, CANVAS_H / 2 + 24);
+    ctx.textAlign = "left";
+  }
 
   if (g.phase === "gameover") {
     ctx.fillStyle = "rgba(0,0,0,0.65)";
@@ -486,25 +571,6 @@ function drawGame(
     for (let i = 0; i < MAX_RANK; i++) {
       const val = ranks[i] ?? "—";
       ctx.fillText(`${i + 1}. ${val}`, CANVAS_W / 2, CANVAS_H / 2 + 54 + i * 22);
-    }
-    ctx.textAlign = "left";
-  } else if (g.phase === "victory") {
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-    ctx.fillStyle = "#bbf7d0";
-    ctx.font = "bold 36px ui-sans-serif, system-ui";
-    ctx.textAlign = "center";
-    ctx.fillText("VICTORY", CANVAS_W / 2, CANVAS_H / 2 - 50);
-    ctx.fillStyle = "#e5e7eb";
-    ctx.font = "20px ui-monospace, monospace";
-    ctx.fillText("Boss defeated — mission clear!", CANVAS_W / 2, CANVAS_H / 2 - 6);
-    ctx.fillText(`Score ${g.score}`, CANVAS_W / 2, CANVAS_H / 2 + 28);
-    ctx.font = "16px ui-monospace, monospace";
-    ctx.fillText("Top scores:", CANVAS_W / 2, CANVAS_H / 2 + 62);
-    const ranks = ranking ?? [];
-    for (let i = 0; i < MAX_RANK; i++) {
-      const val = ranks[i] ?? "—";
-      ctx.fillText(`${i + 1}. ${val}`, CANVAS_W / 2, CANVAS_H / 2 + 88 + i * 22);
     }
     ctx.textAlign = "left";
   }
@@ -536,9 +602,17 @@ function updateGame(g: GameModel, dt: number, now: number): void {
 
   const bossActive = g.boss !== null && g.boss.hp > 0;
 
-  if (!bossActive && now >= g.nextEnemySpawnAt) {
+  if (
+    !bossActive &&
+    now >= g.stageIntroUntil &&
+    now >= g.nextEnemySpawnAt
+  ) {
     spawnEnemy(g, p.x);
-    g.nextEnemySpawnDelay = randBetween(ENEMY_SPAWN_MIN_MS, ENEMY_SPAWN_MAX_MS);
+    const sc = spawnIntervalScale(g.stage);
+    g.nextEnemySpawnDelay = randBetween(
+      ENEMY_SPAWN_MIN_MS * sc,
+      ENEMY_SPAWN_MAX_MS * sc
+    );
     g.nextEnemySpawnAt = now + g.nextEnemySpawnDelay;
   }
 
@@ -612,7 +686,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
       m.y = -9999;
       if (b.hp <= 0) {
         g.score += SCORE_BOSS;
-        g.phase = "victory";
+        advanceStageAfterBoss(g, now);
         return;
       }
     }
@@ -690,15 +764,12 @@ export default function Home() {
       updateGame(g, dt, ts);
     }
 
-    if (
-      (g.phase === "gameover" || g.phase === "victory") &&
-      !endedRef.current
-    ) {
+    if (g.phase === "gameover" && !endedRef.current) {
       endedRef.current = true;
       rankingRef.current = saveRankingScore(g.score);
     }
 
-    drawGame(ctx, g, rankingRef.current);
+    drawGame(ctx, g, rankingRef.current, ts);
 
     rafRef.current = requestAnimationFrame(loop);
   }, []);
@@ -795,8 +866,8 @@ export default function Home() {
           lineHeight: 1.45,
         }}
       >
-        PC: WASD / 방향키 · 스마트폰: 아래 방향 버튼 · 자동 발사 300ms · Lv10에서
-        보스
+        PC: WASD / 방향키 · 스마트폰: 아래 방향 버튼 · 자동 발사 300ms · 스테이지마다
+        Lv10 보스
       </p>
       <div className="game-shell">
         <canvas
@@ -852,6 +923,18 @@ export default function Home() {
           <span className="pad-spacer" />
         </div>
       </div>
+      <p
+        style={{
+          fontSize: 12,
+          opacity: 0.55,
+          margin: "8px 0 0",
+          width: "100%",
+          maxWidth: 800,
+          textAlign: "center",
+        }}
+      >
+        업데이트 v{GAME_VERSION}
+      </p>
     </main>
   );
 }
