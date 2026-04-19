@@ -842,47 +842,25 @@ export default function Home() {
   }, []);
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 12,
-        padding: 24,
-      }}
-    >
-      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>
-        Sky Strike
-      </h1>
-      <p
-        style={{
-          margin: 0,
-          opacity: 0.8,
-          fontSize: 14,
-          textAlign: "center",
-          maxWidth: 520,
-          lineHeight: 1.45,
-        }}
-      >
-        PC: WASD / 방향키 · 스마트폰: 아래 방향 버튼 · 자동 발사 300ms · 스테이지마다
-        Lv10 보스
-      </p>
-      <div className="game-shell">
+    <main className="game-page">
+      <header className="game-page__header">
+        <h1>Sky Strike</h1>
+        <p className="game-page__hint">
+          PC: WASD / 방향키 · 모바일: 하단 버튼 · 자동 발사 300ms · 스테이지마다 Lv10
+          보스
+        </p>
+      </header>
+
+      <div className="game-page__canvas-wrap">
         <canvas
           ref={canvasRef}
           className="game-canvas"
           width={CANVAS_W}
           height={CANVAS_H}
-          style={{
-            border: "2px solid #334155",
-            borderRadius: 8,
-            background: "#0b1220",
-            maxWidth: "100%",
-            height: "auto",
-          }}
         />
+      </div>
+
+      <div className="game-page__bottom">
         <div className="mobile-pad" aria-label="이동 버튼">
           <span className="pad-spacer" />
           <button
@@ -922,19 +900,8 @@ export default function Home() {
           </button>
           <span className="pad-spacer" />
         </div>
+        <p className="game-page__version">업데이트 v{GAME_VERSION}</p>
       </div>
-      <p
-        style={{
-          fontSize: 12,
-          opacity: 0.55,
-          margin: "8px 0 0",
-          width: "100%",
-          maxWidth: 800,
-          textAlign: "center",
-        }}
-      >
-        업데이트 v{GAME_VERSION}
-      </p>
     </main>
   );
 }
