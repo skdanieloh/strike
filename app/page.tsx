@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 // --- Constants ---
 const CANVAS_W = 800;
@@ -33,6 +38,13 @@ const SCORE_ENEMY = 10;
 const SCORE_BOSS = 500;
 const RANKING_KEY = "strike-plane-top5";
 const MAX_RANK = 5;
+/** Boss 등장 직후 플레이어 무적 (몸통/적탄/일반 적 접촉) */
+const BOSS_ENTRY_INVULN_MS = 2200;
+/** 보스 첫 발사까지 여유 (탄·몸통 겹침 완화) */
+const BOSS_FIRST_SHOT_DELAY_MS = 750;
+/** 적 탄이 플레이어에게 맞기 시작하기까지 (생성 위치 겹침 방지) */
+const ENEMY_BULLET_ARM_MS = 180;
+const BOSS_CONTACT_DPS_SCALE = 0.42;
 
 // --- TypeScript types ---
 type Player = {
@@ -105,6 +117,8 @@ type EnemyBullet = {
   damage: number;
   vx: number;
   vy: number;
+  /** 이 시각 이전에는 플레이어에게 피해를 주지 않음 (스폰 겹침 방지) */
+  armedAfter: number;
 };
 
 type GamePhase = "playing" | "gameover" | "victory";
@@ -124,6 +138,8 @@ type GameModel = {
   phase: GamePhase;
   bossSpawned: boolean;
   nextId: number;
+  /** 이 시각(ms)까지 플레이어 피해 무시 (보스 진입 등) */
+  playerInvulnerableUntil: number;
 };
 
 // --- Pure helpers ---
@@ -203,6 +219,7 @@ function createGameModel(): GameModel {
     phase: "playing",
     bossSpawned: false,
     nextId: 1,
+    playerInvulnerableUntil: 0,
   };
 }
 
@@ -240,9 +257,9 @@ function spawnEnemy(g: GameModel, playerX: number): void {
   });
 }
 
-function spawnBoss(g: GameModel): void {
+function spawnBoss(g: GameModel, now: number): void {
   const maxHp = NORMAL_ENEMY_MAX_HP * BOSS_HP_MULT;
-  const now = typeof performance !== "undefined" ? performance.now() : 0;
+  g.enemies = [];
   g.boss = {
     id: nextId(g),
     x: CANVAS_W / 2 - BOSS_W / 2,
@@ -252,8 +269,13 @@ function spawnBoss(g: GameModel): void {
     hp: maxHp,
     maxHp,
     damage: 55,
-    lastShot: now,
+    /** rAF 타임스탬프와 통일 — 첫 발사는 지연 후에만 */
+    lastShot: now + BOSS_FIRST_SHOT_DELAY_MS,
   };
+  g.playerInvulnerableUntil = Math.max(
+    g.playerInvulnerableUntil,
+    now + BOSS_ENTRY_INVULN_MS
+  );
 }
 
 function spawnMissiles(g: GameModel, p: Player): void {
@@ -296,7 +318,7 @@ function tryDropItem(g: GameModel, ex: number, ey: number): void {
   });
 }
 
-function applyLevelUps(g: GameModel): void {
+function applyLevelUps(g: GameModel, now: number): void {
   const p = g.player;
   while (p.exp >= expToNextLevel(p.level)) {
     p.exp -= expToNextLevel(p.level);
@@ -306,7 +328,7 @@ function applyLevelUps(g: GameModel): void {
 
     if (p.level === 10 && !g.bossSpawned) {
       g.bossSpawned = true;
-      spawnBoss(g);
+      spawnBoss(g, now);
     }
   }
 }
@@ -316,11 +338,14 @@ function bossShoot(g: GameModel, b: Boss, px: number, py: number, now: number): 
   b.lastShot = now;
 
   const cx = b.x + b.w / 2 - ENEMY_BULLET_W / 2;
-  const cy = b.y + b.h;
+  /** 입구를 보스 히트박스 밖으로 살짝 내려 플레이어와 스폰 겹침 감소 */
+  const cy = b.y + b.h + 6;
   const tx = px + PLAYER_W / 2;
   const ty = py + PLAYER_H / 2;
-  const dx = tx - (cx + ENEMY_BULLET_W / 2);
-  const dy = ty - (cy + ENEMY_BULLET_H / 2);
+  const aimX = cx + ENEMY_BULLET_W / 2;
+  const aimY = cy + ENEMY_BULLET_H / 2;
+  const dx = tx - aimX;
+  const dy = ty - aimY;
   const len = Math.hypot(dx, dy) || 1;
   const speed = ENEMY_BULLET_SPEED;
   const vx = (dx / len) * speed;
@@ -332,9 +357,10 @@ function bossShoot(g: GameModel, b: Boss, px: number, py: number, now: number): 
     y: cy,
     w: ENEMY_BULLET_W,
     h: ENEMY_BULLET_H,
-    damage: b.damage,
+    damage: Math.min(b.damage, 28),
     vx,
     vy,
+    armedAfter: now + ENEMY_BULLET_ARM_MS,
   });
 }
 
@@ -489,6 +515,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
 
   const p = g.player;
   const keys = g.keys;
+  const canTakeDamage = now >= g.playerInvulnerableUntil;
 
   let mx = 0;
   let my = 0;
@@ -568,7 +595,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
         p.exp += EXP_PER_KILL;
         tryDropItem(g, e.x + e.w / 2, e.y + e.h / 2);
         g.enemies.splice(i, 1);
-        applyLevelUps(g);
+        applyLevelUps(g, now);
       }
       continue outer;
     }
@@ -593,13 +620,17 @@ function updateGame(g: GameModel, dt: number, now: number): void {
   }
 
   // Player vs enemies (DPS while overlapping)
-  for (const e of g.enemies) {
-    if (!rectsOverlap(p.x, p.y, p.w, p.h, e.x, e.y, e.w, e.h)) continue;
-    p.hp -= e.damage * dt;
+  if (canTakeDamage) {
+    for (const e of g.enemies) {
+      if (!rectsOverlap(p.x, p.y, p.w, p.h, e.x, e.y, e.w, e.h)) continue;
+      p.hp -= e.damage * dt;
+    }
   }
 
   // Player vs enemy bullets
   for (const eb of g.enemyBullets) {
+    if (now < eb.armedAfter) continue;
+    if (!canTakeDamage) continue;
     if (!rectsOverlap(p.x, p.y, p.w, p.h, eb.x, eb.y, eb.w, eb.h)) continue;
     p.hp -= eb.damage;
     eb.y = CANVAS_H + 999;
@@ -621,10 +652,10 @@ function updateGame(g: GameModel, dt: number, now: number): void {
   }
 
   // Boss body collision
-  if (g.boss && g.boss.hp > 0) {
+  if (canTakeDamage && g.boss && g.boss.hp > 0) {
     const b = g.boss;
     if (rectsOverlap(p.x, p.y, p.w, p.h, b.x, b.y, b.w, b.h)) {
-      p.hp -= b.damage * 1.2 * dt;
+      p.hp -= b.damage * BOSS_CONTACT_DPS_SCALE * dt;
     }
   }
 
@@ -683,6 +714,31 @@ export default function Home() {
     };
   }, [loop]);
 
+  const bindPadKey = useCallback((key: string) => {
+    const stop = (e: ReactPointerEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+    };
+    return {
+      onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => {
+        stop(e);
+        gameRef.current.keys[key] = true;
+      },
+      onPointerUp: (e: ReactPointerEvent<HTMLButtonElement>) => {
+        stop(e);
+        gameRef.current.keys[key] = false;
+      },
+      onPointerCancel: (e: ReactPointerEvent<HTMLButtonElement>) => {
+        stop(e);
+        gameRef.current.keys[key] = false;
+      },
+      onPointerLeave: (e: ReactPointerEvent<HTMLButtonElement>) => {
+        if (e.pointerType === "touch" || e.buttons === 0) {
+          gameRef.current.keys[key] = false;
+        }
+      },
+    };
+  }, []);
+
   useEffect(() => {
     const gameKeys = new Set([
       "ArrowLeft",
@@ -729,22 +785,73 @@ export default function Home() {
       <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>
         Sky Strike
       </h1>
-      <p style={{ margin: 0, opacity: 0.8, fontSize: 14 }}>
-        Move: WASD / Arrows · Auto-fire every 300ms · Reach level 10 to fight
-        the boss
-      </p>
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_W}
-        height={CANVAS_H}
+      <p
         style={{
-          border: "2px solid #334155",
-          borderRadius: 8,
-          background: "#0b1220",
-          maxWidth: "100%",
-          height: "auto",
+          margin: 0,
+          opacity: 0.8,
+          fontSize: 14,
+          textAlign: "center",
+          maxWidth: 520,
+          lineHeight: 1.45,
         }}
-      />
+      >
+        PC: WASD / 방향키 · 스마트폰: 아래 방향 버튼 · 자동 발사 300ms · Lv10에서
+        보스
+      </p>
+      <div className="game-shell">
+        <canvas
+          ref={canvasRef}
+          className="game-canvas"
+          width={CANVAS_W}
+          height={CANVAS_H}
+          style={{
+            border: "2px solid #334155",
+            borderRadius: 8,
+            background: "#0b1220",
+            maxWidth: "100%",
+            height: "auto",
+          }}
+        />
+        <div className="mobile-pad" aria-label="이동 버튼">
+          <span className="pad-spacer" />
+          <button
+            type="button"
+            className="pad-btn"
+            aria-label="위"
+            {...bindPadKey("ArrowUp")}
+          >
+            ↑
+          </button>
+          <span className="pad-spacer" />
+          <button
+            type="button"
+            className="pad-btn"
+            aria-label="왼쪽"
+            {...bindPadKey("ArrowLeft")}
+          >
+            ←
+          </button>
+          <span className="pad-spacer" />
+          <button
+            type="button"
+            className="pad-btn"
+            aria-label="오른쪽"
+            {...bindPadKey("ArrowRight")}
+          >
+            →
+          </button>
+          <span className="pad-spacer" />
+          <button
+            type="button"
+            className="pad-btn"
+            aria-label="아래"
+            {...bindPadKey("ArrowDown")}
+          >
+            ↓
+          </button>
+          <span className="pad-spacer" />
+        </div>
+      </div>
     </main>
   );
 }
