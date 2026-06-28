@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   type PointerEvent as ReactPointerEvent,
+  type TouchEvent as ReactTouchEvent,
 } from "react";
 
 // --- Constants ---
@@ -47,7 +48,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.6.0";
+const GAME_VERSION = "0.6.1";
 const STAGE_INTRO_MS = 2400;
 
 const SELECT_CARD_SPREAD = { x: 72, y: 300, w: 300, h: 300 };
@@ -225,19 +226,30 @@ function saveRankingScore(score: number): number[] {
 }
 
 function createInitialPlayer(planeType: PlaneType = "spread"): Player {
-  return {
+  const base = {
     x: CANVAS_W / 2 - PLAYER_W / 2,
     y: CANVAS_H - PLAYER_H - 24,
     w: PLAYER_W,
     h: PLAYER_H,
     hp: 100,
     maxHp: 100,
-    attack: 10,
-    missileCount: planeType === "spread" ? 3 : 1,
-    weaponLevel: 1,
-    planeType,
     level: 1,
     exp: 0,
+    planeType,
+  };
+  if (planeType === "spread") {
+    return {
+      ...base,
+      attack: 28,
+      missileCount: 5,
+      weaponLevel: 2,
+    };
+  }
+  return {
+    ...base,
+    attack: 42,
+    missileCount: 1,
+    weaponLevel: 2,
   };
 }
 
@@ -414,7 +426,7 @@ function spawnSpreadBullets(g: GameModel, p: Player): void {
       y: baseY,
       w: MISSILE_W,
       h: MISSILE_H,
-      damage: p.attack,
+      damage: Math.round(p.attack * (1 + p.weaponLevel * 0.12)),
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
     });
@@ -523,8 +535,8 @@ function updateLaserWeapon(g: GameModel, p: Player, dt: number, now: number): vo
   const sway = Math.sin(now / 280) * (18 + p.weaponLevel * 2);
   const cx = sx + (target.x - sx) * 0.42 + sway;
   const cy = sy - Math.max(120, (sy - target.y) * 0.55);
-  const thickness = 4 + p.weaponLevel * 2.4;
-  const dps = p.attack * (1.35 + p.weaponLevel * 0.42);
+  const thickness = 6 + p.weaponLevel * 2.8;
+  const dps = p.attack * (2.4 + p.weaponLevel * 0.58);
   const damage = dps * dt;
 
   g.laserVisual = {
@@ -609,11 +621,12 @@ function applyLevelUps(g: GameModel, now: number): void {
     p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.22));
 
     if (p.planeType === "spread") {
-      p.missileCount += 2;
+      p.missileCount += 3;
       p.weaponLevel += 1;
+      p.attack += 4;
     } else {
       p.weaponLevel += 1;
-      p.attack += 2;
+      p.attack += 6;
     }
 
     if (p.level === 10 && !g.bossSpawned) {
@@ -1051,14 +1064,15 @@ function updateGame(g: GameModel, dt: number, now: number): void {
       p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.35));
     } else if (it.type === "missile") {
       if (p.planeType === "spread") {
-        p.missileCount += 3;
+        p.missileCount += 4;
         p.weaponLevel += 1;
+        p.attack += 3;
       } else {
         p.weaponLevel += 2;
-        p.attack += 2;
+        p.attack += 5;
       }
     } else {
-      p.attack += 3;
+      p.attack += 7;
     }
     g.items.splice(i, 1);
   }
@@ -1138,26 +1152,45 @@ export default function Home() {
   }, [loop]);
 
   const bindPadKey = useCallback((key: string) => {
-    const stop = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const setKey = (down: boolean) => {
+      gameRef.current.keys[key] = down;
+    };
+    const stop = (e: { preventDefault: () => void; stopPropagation?: () => void }) => {
       e.preventDefault();
+      e.stopPropagation?.();
     };
     return {
       onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => {
         stop(e);
-        gameRef.current.keys[key] = true;
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignore */
+        }
+        setKey(true);
       },
       onPointerUp: (e: ReactPointerEvent<HTMLButtonElement>) => {
         stop(e);
-        gameRef.current.keys[key] = false;
+        setKey(false);
       },
       onPointerCancel: (e: ReactPointerEvent<HTMLButtonElement>) => {
         stop(e);
-        gameRef.current.keys[key] = false;
+        setKey(false);
       },
-      onPointerLeave: (e: ReactPointerEvent<HTMLButtonElement>) => {
-        if (e.pointerType === "touch" || e.buttons === 0) {
-          gameRef.current.keys[key] = false;
-        }
+      onLostPointerCapture: () => {
+        setKey(false);
+      },
+      onTouchStart: (e: ReactTouchEvent<HTMLButtonElement>) => {
+        stop(e);
+        setKey(true);
+      },
+      onTouchEnd: (e: ReactTouchEvent<HTMLButtonElement>) => {
+        stop(e);
+        setKey(false);
+      },
+      onTouchCancel: (e: ReactTouchEvent<HTMLButtonElement>) => {
+        stop(e);
+        setKey(false);
       },
     };
   }, []);

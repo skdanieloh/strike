@@ -61,6 +61,16 @@ body {
   cursor: pointer;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  position: relative;
+  z-index: 2;
+}
+
+.game-page__bottom {
+  position: relative;
+  z-index: 20;
+  touch-action: none;
 }
 
 .pad-btn:active,
