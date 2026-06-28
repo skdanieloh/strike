@@ -29,22 +29,38 @@ export function RankingModal({ open, onClose }: RankingModalProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
   if (!open) return null;
 
   const title =
     plane === "all" ? "글로벌 랭킹" : plane === "spread" ? "Spread 랭킹" : "Laser 랭킹";
 
   return (
-    <div className="app-modal" role="presentation" onClick={onClose}>
+    <div className="app-bottom-sheet" role="presentation" onClick={onClose}>
       <div
-        className="app-modal__panel app-modal__panel--wide"
+        className="app-bottom-sheet__panel app-bottom-sheet__panel--wide"
         role="dialog"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="app-modal__header">
-          <h2 className="app-modal__title">{title}</h2>
-          <button type="button" className="app-modal__close" onClick={onClose} aria-label="닫기">
+        <div className="app-bottom-sheet__handle" aria-hidden />
+
+        <div className="app-bottom-sheet__header">
+          <h2 className="app-bottom-sheet__title">{title}</h2>
+          <button
+            type="button"
+            className="app-bottom-sheet__close"
+            onClick={onClose}
+            aria-label="닫기"
+          >
             ✕
           </button>
         </div>
