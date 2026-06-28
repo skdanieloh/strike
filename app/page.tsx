@@ -13,6 +13,7 @@ import { BombButton } from "@/components/BombButton";
 import { GameOverPanel } from "@/components/GameOverPanel";
 import { LobbyScreen } from "@/components/LobbyScreen";
 import { VirtualJoystick } from "@/components/VirtualJoystick";
+import { BOMB_ATTACK_MULT, LASER_SKILL_DPS_MULT, SPREAD_SKILL_DAMAGE_MULT } from "@/lib/combat";
 import type { SharePlane } from "@/lib/share";
 import { GAME_VERSION } from "@/lib/version";
 
@@ -74,7 +75,6 @@ const STAGE_OBJECTIVE_BONUS_BASE = 380;
 const STAGE_FAST_CLEAR_MS = 90_000;
 const ACTIVE_SKILL_COOLDOWN_MS = 16_000;
 const ACTIVE_SKILL_DURATION_MS = 2800;
-const BOMB_ATTACK_MULT = 200;
 const STARTING_BOMBS = 3;
 const STAGE_BOMB_DROP_MIN = 3;
 const STAGE_BOMB_DROP_MAX = 10;
@@ -926,7 +926,7 @@ function spawnSpreadBullets(g: GameModel, p: Player, now: number): void {
   const baseX = p.x + p.w / 2 - MISSILE_W / 2;
   const baseY = p.y - MISSILE_H;
   const baseDamage = Math.round(p.attack * (1 + p.weaponLevel * 0.12));
-  const damage = skillActive ? Math.round(baseDamage * 1.35) : baseDamage;
+  const damage = skillActive ? Math.round(baseDamage * SPREAD_SKILL_DAMAGE_MULT) : baseDamage;
 
   for (let i = 0; i < count; i++) {
     const t = count === 1 ? 0 : i / (count - 1);
@@ -1059,7 +1059,8 @@ function updateActiveLaserWeapon(g: GameModel, p: Player, dt: number, now: numbe
   const cy = (sy + ey) / 2;
   const hitThickness = 10 + p.weaponLevel * 2.2;
   const drawThickness = visualLaserDrawThickness(p.weaponLevel) * 1.4;
-  const dps = p.attack * (4.5 + p.weaponLevel * 0.72);
+  const dps =
+    p.attack * (2.4 + p.weaponLevel * 0.58) * LASER_SKILL_DPS_MULT;
   const damage = dps * dt;
 
   g.laserVisual = {

@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { AuthBar } from "@/components/AuthBar";
+import { GameGuideSheet } from "@/components/GameGuideSheet";
 import { LobbyRefreshButton } from "@/components/LobbyRefreshButton";
 import { RankingModal } from "@/components/RankingModal";
 import { SharedResultBannerLoader } from "@/components/SharedResultBannerLoader";
 import { UserProfilePanel } from "@/components/UserProfilePanel";
 import type { SharePlane } from "@/lib/share";
+import { BOMB_ATTACK_MULT } from "@/lib/combat";
 import { ItemLegendDock } from "@/components/ItemLegendDock";
 import { PlaneWeaponPreview } from "@/components/PlaneWeaponPreview";
 import { planeLabel } from "@/lib/share";
@@ -42,6 +44,7 @@ const PLANES: {
 export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
   const [rankingOpen, setRankingOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   return (
     <div className="lobby-screen" aria-label="게임 로비">
@@ -64,7 +67,14 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
           className="lobby-screen__action-btn lobby-screen__action-btn--primary"
           onClick={() => setRankingOpen(true)}
         >
-          🏆 랭킹 보기
+          🏆 랭킹
+        </button>
+        <button
+          type="button"
+          className="lobby-screen__action-btn"
+          onClick={() => setGuideOpen(true)}
+        >
+          📖 가이드
         </button>
       </div>
 
@@ -115,7 +125,7 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
           </li>
           <li>
             <span className="lobby-screen__control-key">모바일</span>
-            하단 조이스틱 · ⚡ 스킬 · 💣 폭탄(×200)
+            하단 조이스틱 · ⚡ 스킬 · 💣 폭탄(×{BOMB_ATTACK_MULT.toLocaleString("ko-KR")})
           </li>
           <li>
             <span className="lobby-screen__control-key">공통</span>
@@ -129,6 +139,7 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
       </footer>
 
       <RankingModal open={rankingOpen} onClose={() => setRankingOpen(false)} />
+      <GameGuideSheet open={guideOpen} onClose={() => setGuideOpen(false)} />
       <UserProfilePanel open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );

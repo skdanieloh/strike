@@ -1,6 +1,7 @@
 "use client";
 
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { BOMB_ATTACK_MULT } from "@/lib/combat";
 
 type BombButtonProps = {
   count: number;
@@ -30,7 +31,7 @@ export function BombButton({ count, disabled = false, onBomb }: BombButtonProps)
       </span>
       <span className="bomb-button__label">폭탄</span>
       <span className="bomb-button__count">×{count}</span>
-      <span className="bomb-button__hint">×200 ATK</span>
+      <span className="bomb-button__hint">×{BOMB_ATTACK_MULT.toLocaleString("ko-KR")} ATK</span>
     </button>
   );
 }

@@ -324,12 +324,17 @@ body {
 
 .lobby-screen__quick-actions {
   display: flex;
+  gap: 10px;
   justify-content: center;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
 }
 
 .lobby-screen__action-btn {
-  width: 100%;
-  max-width: 320px;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
   min-height: 48px;
   padding: 12px 18px;
   border: 1px solid #334155;
@@ -1554,5 +1559,227 @@ body {
 
   .app-modal__panel {
     border-radius: 16px;
+  }
+}
+
+/* ========== 게임 가이드 바텀시트 ========== */
+.app-bottom-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(4px);
+  animation: bottom-sheet-backdrop-in 0.24s ease-out;
+}
+
+.app-bottom-sheet__panel {
+  width: min(100%, 520px);
+  max-height: min(92dvh, 820px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 16px max(20px, env(safe-area-inset-bottom, 20px));
+  border: 1px solid #334155;
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.99), rgba(2, 6, 23, 1));
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.35);
+  animation: bottom-sheet-slide-in 0.34s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.app-bottom-sheet__handle {
+  width: 40px;
+  height: 4px;
+  margin: 4px auto 12px;
+  border-radius: 999px;
+  background: #475569;
+}
+
+.app-bottom-sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: 8px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 1) 70%, rgba(15, 23, 42, 0));
+}
+
+.app-bottom-sheet__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+
+.app-bottom-sheet__close {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.8);
+  color: #cbd5e1;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.app-bottom-sheet__close:hover {
+  border-color: #64748b;
+  color: #f8fafc;
+}
+
+@keyframes bottom-sheet-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes bottom-sheet-slide-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.game-guide__section {
+  margin-bottom: 22px;
+}
+
+.game-guide__section:last-child {
+  margin-bottom: 8px;
+}
+
+.game-guide__heading {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #e2e8f0;
+  letter-spacing: -0.01em;
+}
+
+.game-guide__lead,
+.game-guide__text {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #94a3b8;
+}
+
+.game-guide__skill {
+  padding: 14px;
+  margin-bottom: 10px;
+  border: 1px solid #334155;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.game-guide__skill--spread {
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.game-guide__skill--laser {
+  border-color: rgba(192, 132, 252, 0.35);
+}
+
+.game-guide__skill-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.game-guide__skill-badge {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.game-guide__skill--spread .game-guide__skill-badge {
+  background: rgba(14, 116, 144, 0.35);
+  color: #7dd3fc;
+}
+
+.game-guide__skill--laser .game-guide__skill-badge {
+  background: rgba(126, 34, 206, 0.28);
+  color: #d8b4fe;
+}
+
+.game-guide__skill-name {
+  font-size: 16px;
+  font-weight: 800;
+  color: #f1f5f9;
+}
+
+.game-guide__list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #cbd5e1;
+}
+
+.game-guide__list li + li {
+  margin-top: 6px;
+}
+
+.game-guide__list strong {
+  color: #fde047;
+  font-weight: 800;
+}
+
+.game-guide__controls {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.game-guide__controls li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #cbd5e1;
+}
+
+.game-guide__key {
+  flex-shrink: 0;
+  min-width: 52px;
+  padding: 4px 8px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.8);
+  font-size: 11px;
+  font-weight: 800;
+  color: #94a3b8;
+  text-align: center;
+}
+
+@media (min-width: 769px) {
+  .app-bottom-sheet {
+    align-items: flex-end;
+    padding: 0 16px;
+  }
+
+  .app-bottom-sheet__panel {
+    border-radius: 20px 20px 0 0;
   }
 }
