@@ -1,5 +1,6 @@
 "use client";
 
+import { LobbyInstallButton } from "@/components/LobbyInstallButton";
 import { LobbyProfileButton } from "@/components/LobbyProfileButton";
 import { LobbyRefreshButton } from "@/components/LobbyRefreshButton";
 import { LobbyShareButton } from "@/components/LobbyShareButton";
@@ -15,6 +16,7 @@ export function LobbyTopBar({ currentVersion, onOpenProfile }: LobbyTopBarProps)
       <LobbyProfileButton onOpenProfile={onOpenProfile} />
       <div className="lobby-screen__top-actions">
         <LobbyShareButton />
+        <LobbyInstallButton />
         <LobbyRefreshButton currentVersion={currentVersion} />
       </div>
     </div>

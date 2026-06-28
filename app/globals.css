@@ -1843,3 +1843,88 @@ body {
     border-radius: 20px 20px 0 0;
   }
 }
+
+/* ========== 앱 설치 가이드 (iOS) ========== */
+.install-guide__lead {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #94a3b8;
+}
+
+.install-guide__warn {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(120, 53, 15, 0.22);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #fde68a;
+}
+
+.install-guide__warn strong {
+  color: #fef3c7;
+}
+
+.install-guide__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.install-guide__step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #334155;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.install-guide__step-num {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(14, 116, 144, 0.35);
+  color: #7dd3fc;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.install-guide__step-body {
+  min-width: 0;
+}
+
+.install-guide__step-title {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #f1f5f9;
+}
+
+.install-guide__step-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #cbd5e1;
+}
+
+.install-guide__tip {
+  margin: 16px 0 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.55);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #94a3b8;
+}
