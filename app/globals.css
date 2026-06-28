@@ -172,21 +172,6 @@ body {
   white-space: nowrap;
 }
 
-.auth-bar__logout {
-  padding: 6px 10px;
-  border: 1px solid #334155;
-  border-radius: 8px;
-  background: transparent;
-  color: #94a3b8;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.auth-bar__logout:hover {
-  color: #e2e8f0;
-  border-color: #475569;
-}
-
 .auth-bar--compact .auth-bar__google {
   padding: 6px 10px;
   font-size: 12px;
@@ -217,20 +202,35 @@ body {
 
 .lobby-screen__hero {
   text-align: center;
+  padding-top: 44px;
 }
 
-.lobby-screen__refresh-wrap {
+.lobby-screen__top-bar {
   position: absolute;
   top: max(10px, env(safe-area-inset-top, 10px));
+  left: max(12px, env(safe-area-inset-left, 12px));
   right: max(12px, env(safe-area-inset-right, 12px));
   z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lobby-screen__top-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.lobby-screen__toolbar-item {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
 }
 
-.lobby-screen__refresh-btn {
+.lobby-screen__toolbar-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -247,31 +247,54 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-.lobby-screen__refresh-btn:hover,
-.lobby-screen__refresh-btn:focus-visible {
+.lobby-screen__toolbar-btn:hover,
+.lobby-screen__toolbar-btn:focus-visible {
   border-color: rgba(56, 189, 248, 0.55);
   color: #38bdf8;
   background: rgba(8, 47, 73, 0.92);
 }
 
-.lobby-screen__refresh-btn:active:not(:disabled) {
+.lobby-screen__toolbar-btn:active:not(:disabled) {
   transform: scale(0.94);
 }
 
-.lobby-screen__refresh-btn--busy {
+.lobby-screen__toolbar-btn--busy {
   opacity: 0.72;
   cursor: wait;
 }
 
-.lobby-screen__refresh-btn--busy .lobby-screen__refresh-icon {
+.lobby-screen__toolbar-btn--busy .lobby-screen__toolbar-icon {
   animation: lobby-refresh-spin 0.8s linear infinite;
 }
 
-.lobby-screen__refresh-icon {
+.lobby-screen__toolbar-btn--profile {
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.lobby-screen__toolbar-icon {
   display: block;
 }
 
-.lobby-screen__refresh-hint {
+.lobby-screen__profile-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.lobby-screen__profile-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #1e293b;
+  font-size: 14px;
+}
+
+.lobby-screen__toolbar-hint {
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.92);
@@ -315,11 +338,6 @@ body {
   font-size: 14px;
   line-height: 1.45;
   color: #94a3b8;
-}
-
-.lobby-screen__auth {
-  display: flex;
-  justify-content: center;
 }
 
 .lobby-screen__quick-actions {
@@ -1588,6 +1606,48 @@ body {
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.99), rgba(2, 6, 23, 1));
   box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.35);
   animation: bottom-sheet-slide-in 0.34s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.app-bottom-sheet__panel--profile {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.profile-sheet__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.profile-sheet__actions {
+  flex-shrink: 0;
+  padding-top: 12px;
+  margin-top: 4px;
+}
+
+.profile-sheet__logout {
+  width: 100%;
+  min-height: 52px;
+  border: none;
+  border-radius: 14px;
+  background: rgba(30, 41, 59, 0.95);
+  color: #ff453a;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.profile-sheet__logout:hover {
+  background: rgba(51, 65, 85, 0.95);
+}
+
+.profile-sheet__logout:active {
+  transform: scale(0.98);
 }
 
 .app-bottom-sheet__handle {

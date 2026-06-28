@@ -1,6 +1,6 @@
 "use client";
 
-import { signIn, signOut, useSession } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 
 type AuthBarProps = {
   compact?: boolean;
@@ -66,11 +66,6 @@ export function AuthBar({ compact = false, onOpenProfile }: AuthBarProps) {
           </>
         )}
       </button>
-      {!compact && (
-        <button type="button" className="auth-bar__logout" onClick={() => signOut()}>
-          로그아웃
-        </button>
-      )}
     </div>
   );
 }

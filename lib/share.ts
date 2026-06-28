@@ -34,6 +34,40 @@ export function buildShareUrl(payload: SharePayload, origin?: string): string {
   return `${base}/?${params.toString()}`;
 }
 
+export function buildGameShareUrl(origin?: string): string {
+  const base =
+    origin ??
+    (typeof window !== "undefined" ? window.location.origin : "https://strike-rosy.vercel.app");
+  return `${base}/`;
+}
+
+export function buildGameShareText(): string {
+  return "Sky Strike — 2D 슈팅! 기체를 고르고 스테이지를 돌파해 보세요.";
+}
+
+export async function shareGameLink(): Promise<{ message: string }> {
+  const url = buildGameShareUrl();
+  const text = buildGameShareText();
+
+  try {
+    if (typeof navigator !== "undefined" && navigator.share) {
+      await navigator.share({ title: "Sky Strike", text, url });
+      return { message: "공유했습니다!" };
+    }
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return { message: "" };
+    }
+  }
+
+  try {
+    await navigator.clipboard.writeText(`${text}\n${url}`);
+    return { message: "링크를 복사했습니다!" };
+  } catch {
+    return { message: "공유에 실패했습니다." };
+  }
+}
+
 export function parseShareFromSearch(
   search: string | URLSearchParams
 ): SharePayload | null {

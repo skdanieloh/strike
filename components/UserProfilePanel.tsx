@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { formatPlayDuration, formatPlayedAt } from "@/lib/format";
 import { planeLabel } from "@/lib/share";
 import type { UserProfileSummary } from "@/lib/scores";
@@ -61,19 +61,35 @@ export function UserProfilePanel({ open, onClose }: UserProfilePanelProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
   if (!open || !session?.user) return null;
 
   const user = session.user;
 
+  const handleLogout = () => {
+    onClose();
+    void signOut();
+  };
+
   return (
-    <div className="app-modal" role="presentation" onClick={onClose}>
+    <div className="app-bottom-sheet" role="presentation" onClick={onClose}>
       <div
-        className="app-modal__panel"
+        className="app-bottom-sheet__panel app-bottom-sheet__panel--profile"
         role="dialog"
         aria-label="내 프로필"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="app-modal__header">
+        <div className="app-bottom-sheet__handle" aria-hidden />
+
+        <div className="app-bottom-sheet__header">
           <div className="profile-panel__identity">
             {user.image ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -84,97 +100,109 @@ export function UserProfilePanel({ open, onClose }: UserProfilePanelProps) {
               </span>
             )}
             <div>
-              <h2 className="app-modal__title">{user.name ?? "Pilot"}</h2>
+              <h2 className="app-bottom-sheet__title">{user.name ?? "Pilot"}</h2>
               <p className="profile-panel__subtitle">플레이 기록 · 랭킹</p>
             </div>
           </div>
-          <button type="button" className="app-modal__close" onClick={onClose} aria-label="닫기">
+          <button type="button" className="app-bottom-sheet__close" onClick={onClose} aria-label="닫기">
             ✕
           </button>
         </div>
 
-        {!cloudEnabled && !loading && (
-          <p className="profile-panel__hint">
-            클라우드 기록 서버가 연결되지 않았습니다. 로컬 최고 기록만 표시됩니다.
-          </p>
-        )}
+        <div className="profile-sheet__body">
+          {!cloudEnabled && !loading && (
+            <p className="profile-panel__hint">
+              클라우드 기록 서버가 연결되지 않았습니다. 로컬 최고 기록만 표시됩니다.
+            </p>
+          )}
 
-        {typeof user.bestScore === "number" && (
-          <p className="profile-panel__local-best">
-            세션 최고 기록 {user.bestScore.toLocaleString()}점
-            {user.bestStage ? ` · St.${user.bestStage}` : ""}
-            {user.bestPlane ? ` · ${planeLabel(user.bestPlane as "spread" | "laser")}` : ""}
-          </p>
-        )}
+          {typeof user.bestScore === "number" && (
+            <p className="profile-panel__local-best">
+              세션 최고 기록 {user.bestScore.toLocaleString()}점
+              {user.bestStage ? ` · St.${user.bestStage}` : ""}
+              {user.bestPlane ? ` · ${planeLabel(user.bestPlane as "spread" | "laser")}` : ""}
+            </p>
+          )}
 
-        {loading && <p className="profile-panel__status">기록 불러오는 중…</p>}
-        {error && <p className="profile-panel__status profile-panel__status--error">{error}</p>}
+          {loading && <p className="profile-panel__status">기록 불러오는 중…</p>}
+          {error && <p className="profile-panel__status profile-panel__status--error">{error}</p>}
 
-        {profile && cloudEnabled && (
-          <>
-            <div className="profile-panel__rank-grid">
-              <div className="profile-panel__rank-card">
-                <span className="profile-panel__rank-label">글로벌</span>
-                <strong className="profile-panel__rank-value">{rankLabel(profile.globalRank)}</strong>
-                {profile.globalRecord && (
-                  <span className="profile-panel__rank-detail">
-                    {profile.globalRecord.score.toLocaleString()}점
-                  </span>
-                )}
+          {profile && cloudEnabled && (
+            <>
+              <div className="profile-panel__rank-grid">
+                <div className="profile-panel__rank-card">
+                  <span className="profile-panel__rank-label">글로벌</span>
+                  <strong className="profile-panel__rank-value">{rankLabel(profile.globalRank)}</strong>
+                  {profile.globalRecord && (
+                    <span className="profile-panel__rank-detail">
+                      {profile.globalRecord.score.toLocaleString()}점
+                    </span>
+                  )}
+                </div>
+                <div className="profile-panel__rank-card">
+                  <span className="profile-panel__rank-label">Spread</span>
+                  <strong className="profile-panel__rank-value">
+                    {rankLabel(profile.planeRanks.spread.rank)}
+                  </strong>
+                  {profile.planeRanks.spread.record && (
+                    <span className="profile-panel__rank-detail">
+                      {profile.planeRanks.spread.record.score.toLocaleString()}점
+                    </span>
+                  )}
+                </div>
+                <div className="profile-panel__rank-card">
+                  <span className="profile-panel__rank-label">Laser</span>
+                  <strong className="profile-panel__rank-value">
+                    {rankLabel(profile.planeRanks.laser.rank)}
+                  </strong>
+                  {profile.planeRanks.laser.record && (
+                    <span className="profile-panel__rank-detail">
+                      {profile.planeRanks.laser.record.score.toLocaleString()}점
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="profile-panel__rank-card">
-                <span className="profile-panel__rank-label">Spread</span>
-                <strong className="profile-panel__rank-value">
-                  {rankLabel(profile.planeRanks.spread.rank)}
-                </strong>
-                {profile.planeRanks.spread.record && (
-                  <span className="profile-panel__rank-detail">
-                    {profile.planeRanks.spread.record.score.toLocaleString()}점
-                  </span>
-                )}
-              </div>
-              <div className="profile-panel__rank-card">
-                <span className="profile-panel__rank-label">Laser</span>
-                <strong className="profile-panel__rank-value">
-                  {rankLabel(profile.planeRanks.laser.rank)}
-                </strong>
-                {profile.planeRanks.laser.record && (
-                  <span className="profile-panel__rank-detail">
-                    {profile.planeRanks.laser.record.score.toLocaleString()}점
-                  </span>
-                )}
-              </div>
-            </div>
 
-            <section className="profile-panel__history" aria-label="플레이 히스토리">
-              <h3 className="profile-panel__history-title">최근 플레이</h3>
-              {profile.history.length === 0 ? (
-                <p className="profile-panel__hint">아직 저장된 플레이 기록이 없습니다.</p>
-              ) : (
-                <ol className="profile-panel__history-list">
-                  {profile.history.map((run) => (
-                    <li key={run.playedAt} className="profile-panel__history-row">
-                      <div className="profile-panel__history-main">
-                        <span className="profile-panel__history-score">
-                          {run.score.toLocaleString()}점
-                        </span>
-                        <span className="profile-panel__history-meta">
-                          St.{run.stage} · {planeLabel(run.plane)} · {formatPlayDuration(run.durationMs)}
-                        </span>
-                      </div>
-                      <div className="profile-panel__history-side">
-                        <span className="profile-panel__history-time">{formatPlayedAt(run.playedAt)}</span>
-                        <span className="profile-panel__history-ranks">
-                          글로벌 {rankLabel(run.globalRank)} · 기종 {rankLabel(run.planeRank)}
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </section>
-          </>
-        )}
+              <section className="profile-panel__history" aria-label="플레이 히스토리">
+                <h3 className="profile-panel__history-title">최근 플레이</h3>
+                {profile.history.length === 0 ? (
+                  <p className="profile-panel__hint">아직 저장된 플레이 기록이 없습니다.</p>
+                ) : (
+                  <ol className="profile-panel__history-list">
+                    {profile.history.map((run) => (
+                      <li key={run.playedAt} className="profile-panel__history-row">
+                        <div className="profile-panel__history-main">
+                          <span className="profile-panel__history-score">
+                            {run.score.toLocaleString()}점
+                          </span>
+                          <span className="profile-panel__history-meta">
+                            St.{run.stage} · {planeLabel(run.plane)} · {formatPlayDuration(run.durationMs)}
+                          </span>
+                        </div>
+                        <div className="profile-panel__history-side">
+                          <span className="profile-panel__history-time">{formatPlayedAt(run.playedAt)}</span>
+                          <span className="profile-panel__history-ranks">
+                            글로벌 {rankLabel(run.globalRank)} · 기종 {rankLabel(run.planeRank)}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+            </>
+          )}
+        </div>
+
+        <div className="profile-sheet__actions">
+          <button
+            type="button"
+            className="profile-sheet__logout"
+            onClick={handleLogout}
+          >
+            로그아웃
+          </button>
+        </div>
       </div>
     </div>
   );

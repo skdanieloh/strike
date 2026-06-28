@@ -32,17 +32,17 @@ export function LobbyRefreshButton({ currentVersion }: LobbyRefreshButtonProps) 
   }, [busy, currentVersion]);
 
   return (
-    <div className="lobby-screen__refresh-wrap">
+    <div className="lobby-screen__toolbar-item">
       <button
         type="button"
-        className={`lobby-screen__refresh-btn${busy ? " lobby-screen__refresh-btn--busy" : ""}`}
+        className={`lobby-screen__toolbar-btn${busy ? " lobby-screen__toolbar-btn--busy" : ""}`}
         onClick={() => void onRefresh()}
         disabled={busy}
         aria-label="최신 배포 버전 새로고침"
         title="최신 버전 새로고침"
       >
         <svg
-          className="lobby-screen__refresh-icon"
+          className="lobby-screen__toolbar-icon"
           viewBox="0 0 24 24"
           width="20"
           height="20"
@@ -54,7 +54,7 @@ export function LobbyRefreshButton({ currentVersion }: LobbyRefreshButtonProps) 
           />
         </svg>
       </button>
-      {hint ? <span className="lobby-screen__refresh-hint">{hint}</span> : null}
+      {hint ? <span className="lobby-screen__toolbar-hint">{hint}</span> : null}
     </div>
   );
 }

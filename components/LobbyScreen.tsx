@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { AuthBar } from "@/components/AuthBar";
 import { GameGuideSheet } from "@/components/GameGuideSheet";
-import { LobbyRefreshButton } from "@/components/LobbyRefreshButton";
+import { LobbyTopBar } from "@/components/LobbyTopBar";
 import { RankingModal } from "@/components/RankingModal";
 import { SharedResultBannerLoader } from "@/components/SharedResultBannerLoader";
 import { UserProfilePanel } from "@/components/UserProfilePanel";
@@ -48,7 +47,7 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
 
   return (
     <div className="lobby-screen" aria-label="게임 로비">
-      <LobbyRefreshButton currentVersion={version} />
+      <LobbyTopBar currentVersion={version} onOpenProfile={() => setProfileOpen(true)} />
       <header className="lobby-screen__hero">
         <p className="lobby-screen__eyebrow">2D 슈팅</p>
         <h1 className="lobby-screen__title">Sky Strike</h1>
@@ -56,10 +55,6 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
       </header>
 
       <SharedResultBannerLoader />
-
-      <div className="lobby-screen__auth">
-        <AuthBar onOpenProfile={() => setProfileOpen(true)} />
-      </div>
 
       <div className="lobby-screen__quick-actions">
         <button
