@@ -48,7 +48,66 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.6.1";
+const GAME_VERSION = "0.6.2";
+
+type MovementInput = {
+  left: boolean;
+  right: boolean;
+  up: boolean;
+  down: boolean;
+};
+
+const EMPTY_MOVE: MovementInput = {
+  left: false,
+  right: false,
+  up: false,
+  down: false,
+};
+
+function clearMovement(m: MovementInput): void {
+  m.left = false;
+  m.right = false;
+  m.up = false;
+  m.down = false;
+}
+
+/** Magic Keyboard 등: e.code 기준 (e.key보다 안정적) */
+function applyKeyboardMove(e: KeyboardEvent, down: boolean, kb: MovementInput): boolean {
+  switch (e.code) {
+    case "ArrowLeft":
+    case "KeyA":
+      kb.left = down;
+      return true;
+    case "ArrowRight":
+    case "KeyD":
+      kb.right = down;
+      return true;
+    case "ArrowUp":
+    case "KeyW":
+      kb.up = down;
+      return true;
+    case "ArrowDown":
+    case "KeyS":
+      kb.down = down;
+      return true;
+    default:
+      return false;
+  }
+}
+
+function readMovementDelta(kb: MovementInput, pad: MovementInput): { mx: number; my: number } {
+  let mx = 0;
+  let my = 0;
+  if (kb.left || pad.left) mx -= 1;
+  if (kb.right || pad.right) mx += 1;
+  if (kb.up || pad.up) my -= 1;
+  if (kb.down || pad.down) my += 1;
+  if (mx !== 0 && my !== 0) {
+    mx *= 0.7071;
+    my *= 0.7071;
+  }
+  return { mx, my };
+}
 const STAGE_INTRO_MS = 2400;
 
 const SELECT_CARD_SPREAD = { x: 72, y: 300, w: 300, h: 300 };
@@ -153,6 +212,8 @@ type GameModel = {
   enemyBullets: EnemyBullet[];
   items: Item[];
   keys: Record<string, boolean>;
+  kbMove: MovementInput;
+  padMove: MovementInput;
   nextEnemySpawnAt: number;
   nextEnemySpawnDelay: number;
   lastPlayerShot: number;
@@ -249,7 +310,7 @@ function createInitialPlayer(planeType: PlaneType = "spread"): Player {
     ...base,
     attack: 42,
     missileCount: 1,
-    weaponLevel: 2,
+    weaponLevel: 1,
   };
 }
 
@@ -262,6 +323,8 @@ function createGameModel(): GameModel {
     enemyBullets: [],
     items: [],
     keys: {},
+    kbMove: { ...EMPTY_MOVE },
+    padMove: { ...EMPTY_MOVE },
     nextEnemySpawnAt: 0,
     nextEnemySpawnDelay: randBetween(
       ENEMY_SPAWN_MIN_MS * spawnIntervalScale(1, 1),
@@ -535,7 +598,7 @@ function updateLaserWeapon(g: GameModel, p: Player, dt: number, now: number): vo
   const sway = Math.sin(now / 280) * (18 + p.weaponLevel * 2);
   const cx = sx + (target.x - sx) * 0.42 + sway;
   const cy = sy - Math.max(120, (sy - target.y) * 0.55);
-  const thickness = 6 + p.weaponLevel * 2.8;
+  const thickness = 4 + p.weaponLevel * 2.4;
   const dps = p.attack * (2.4 + p.weaponLevel * 0.58);
   const damage = dps * dt;
 
@@ -929,20 +992,9 @@ function updateGame(g: GameModel, dt: number, now: number): void {
   if (g.phase !== "playing") return;
 
   const p = g.player;
-  const keys = g.keys;
   const canTakeDamage = now >= g.playerInvulnerableUntil;
 
-  let mx = 0;
-  let my = 0;
-  if (keys["ArrowLeft"] || keys["a"] || keys["A"]) mx -= 1;
-  if (keys["ArrowRight"] || keys["d"] || keys["D"]) mx += 1;
-  if (keys["ArrowUp"] || keys["w"] || keys["W"]) my -= 1;
-  if (keys["ArrowDown"] || keys["s"] || keys["S"]) my -= 1;
-
-  if (mx !== 0 && my !== 0) {
-    mx *= 0.7071;
-    my *= 0.7071;
-  }
+  const { mx, my } = readMovementDelta(g.kbMove, g.padMove);
 
   p.x += mx * PLAYER_SPEED_PX * dt;
   p.y += my * PLAYER_SPEED_PX * dt;
@@ -1107,6 +1159,7 @@ function canvasPointFromEvent(
 
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
   const gameRef = useRef<GameModel>(createGameModel());
   const rankingRef = useRef<number[] | null>(null);
   const endedRef = useRef(false);
@@ -1151,48 +1204,39 @@ export default function Home() {
     };
   }, [loop]);
 
-  const bindPadKey = useCallback((key: string) => {
-    const setKey = (down: boolean) => {
-      gameRef.current.keys[key] = down;
-    };
-    const stop = (e: { preventDefault: () => void; stopPropagation?: () => void }) => {
-      e.preventDefault();
-      e.stopPropagation?.();
+  const bindPadKey = useCallback((dir: keyof MovementInput) => {
+    const setPad = (down: boolean) => {
+      gameRef.current.padMove[dir] = down;
     };
     return {
-      onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => {
-        stop(e);
-        try {
-          e.currentTarget.setPointerCapture(e.pointerId);
-        } catch {
-          /* ignore */
-        }
-        setKey(true);
+      onMouseDown: (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
+        setPad(true);
       },
-      onPointerUp: (e: ReactPointerEvent<HTMLButtonElement>) => {
-        stop(e);
-        setKey(false);
+      onMouseUp: (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
+        setPad(false);
       },
-      onPointerCancel: (e: ReactPointerEvent<HTMLButtonElement>) => {
-        stop(e);
-        setKey(false);
-      },
-      onLostPointerCapture: () => {
-        setKey(false);
+      onMouseLeave: (e: React.MouseEvent<HTMLButtonElement>) => {
+        if (e.buttons === 0) setPad(false);
       },
       onTouchStart: (e: ReactTouchEvent<HTMLButtonElement>) => {
-        stop(e);
-        setKey(true);
+        e.preventDefault();
+        setPad(true);
       },
       onTouchEnd: (e: ReactTouchEvent<HTMLButtonElement>) => {
-        stop(e);
-        setKey(false);
+        e.preventDefault();
+        setPad(false);
       },
       onTouchCancel: (e: ReactTouchEvent<HTMLButtonElement>) => {
-        stop(e);
-        setKey(false);
+        e.preventDefault();
+        setPad(false);
       },
     };
+  }, []);
+
+  const focusGame = useCallback(() => {
+    mainRef.current?.focus({ preventScroll: true });
   }, []);
 
   const onCanvasPointerDown = useCallback(
@@ -1200,57 +1244,63 @@ export default function Home() {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const pt = canvasPointFromEvent(canvas, e.clientX, e.clientY);
-      trySelectPlane(gameRef.current, pt.x, pt.y, performance.now());
+      if (trySelectPlane(gameRef.current, pt.x, pt.y, performance.now())) {
+        focusGame();
+      }
     },
-    []
+    [focusGame]
   );
 
   useEffect(() => {
-    const gameKeys = new Set([
-      "ArrowLeft",
-      "ArrowRight",
-      "ArrowUp",
-      "ArrowDown",
-      "a",
-      "A",
-      "w",
-      "W",
-      "s",
-      "S",
-      "d",
-      "D",
-      "1",
-      "2",
-    ]);
+    const releasePad = () => {
+      clearMovement(gameRef.current.padMove);
+    };
+    const releaseAll = () => {
+      clearMovement(gameRef.current.kbMove);
+      clearMovement(gameRef.current.padMove);
+    };
+
     const down = (e: KeyboardEvent) => {
       const g = gameRef.current;
       if (g.phase === "select") {
-        if (e.key === "1") {
+        if (e.key === "1" || e.code === "Digit1") {
           beginPlaying(g, "spread", performance.now());
+          focusGame();
           return;
         }
-        if (e.key === "2") {
+        if (e.key === "2" || e.code === "Digit2") {
           beginPlaying(g, "laser", performance.now());
+          focusGame();
           return;
         }
       }
-      if (gameKeys.has(e.key)) e.preventDefault();
-      g.keys[e.key] = true;
+      if (applyKeyboardMove(e, true, g.kbMove)) {
+        e.preventDefault();
+      }
     };
     const up = (e: KeyboardEvent) => {
-      if (gameKeys.has(e.key)) e.preventDefault();
-      gameRef.current.keys[e.key] = false;
+      if (applyKeyboardMove(e, false, gameRef.current.kbMove)) {
+        e.preventDefault();
+      }
     };
+
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
+    window.addEventListener("mouseup", releasePad);
+    window.addEventListener("blur", releaseAll);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) releaseAll();
+    });
     return () => {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
+      window.removeEventListener("mouseup", releasePad);
+      window.removeEventListener("blur", releaseAll);
     };
-  }, []);
+  }, [focusGame]);
 
   return (
-    <main className="game-page">
+    <main className="game-page" tabIndex={0} ref={mainRef}>
       <header className="game-page__header">
         <h1>Sky Strike</h1>
         <p className="game-page__hint">
@@ -1274,7 +1324,7 @@ export default function Home() {
             type="button"
             className="pad-btn"
             aria-label="왼쪽"
-            {...bindPadKey("ArrowLeft")}
+            {...bindPadKey("left")}
           >
             ←
           </button>
@@ -1282,7 +1332,7 @@ export default function Home() {
             type="button"
             className="pad-btn"
             aria-label="위"
-            {...bindPadKey("ArrowUp")}
+            {...bindPadKey("up")}
           >
             ↑
           </button>
@@ -1290,7 +1340,7 @@ export default function Home() {
             type="button"
             className="pad-btn"
             aria-label="아래"
-            {...bindPadKey("ArrowDown")}
+            {...bindPadKey("down")}
           >
             ↓
           </button>
@@ -1298,7 +1348,7 @@ export default function Home() {
             type="button"
             className="pad-btn"
             aria-label="오른쪽"
-            {...bindPadKey("ArrowRight")}
+            {...bindPadKey("right")}
           >
             →
           </button>

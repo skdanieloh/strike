@@ -26,7 +26,14 @@ body {
   touch-action: manipulation;
 }
 
-/* ========== 공통 ========== */
+.game-page {
+  outline: none;
+}
+
+.game-page:focus-visible {
+  outline: none;
+}
+
 .game-canvas {
   touch-action: none;
   -webkit-user-select: none;
