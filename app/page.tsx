@@ -4,9 +4,14 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   type PointerEvent as ReactPointerEvent,
   type TouchEvent as ReactTouchEvent,
 } from "react";
+import { AuthBar } from "@/components/AuthBar";
+import { GameOverPanel } from "@/components/GameOverPanel";
+import { SharedResultBannerLoader } from "@/components/SharedResultBannerLoader";
+import type { SharePlane } from "@/lib/share";
 
 // --- Constants ---
 const CANVAS_W = 800;
@@ -54,7 +59,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.8.0";
+const GAME_VERSION = "0.9.0";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 
@@ -1829,6 +1834,11 @@ export default function Home() {
   const rafRef = useRef<number | null>(null);
   const lastTsRef = useRef<number | null>(null);
   const tickRef = useRef<(ts: number) => void>(() => {});
+  const [gameOver, setGameOver] = useState<{
+    score: number;
+    stage: number;
+    plane: SharePlane;
+  } | null>(null);
 
   tickRef.current = (ts: number) => {
     try {
@@ -1853,6 +1863,12 @@ export default function Home() {
       if (g.phase === "gameover" && !endedRef.current) {
         endedRef.current = true;
         rankingRef.current = saveRankingScore(g.score);
+        const summary = {
+          score: g.score,
+          stage: g.stage,
+          plane: g.player.planeType as SharePlane,
+        };
+        queueMicrotask(() => setGameOver(summary));
       }
 
       drawGame(ctx, g, rankingRef.current, ts);
@@ -1972,10 +1988,22 @@ export default function Home() {
     };
   }, [focusGame]);
 
+  const handleRestart = useCallback(() => {
+    endedRef.current = false;
+    rankingRef.current = loadRanking();
+    gameRef.current = createGameModel();
+    setGameOver(null);
+    focusGame();
+  }, [focusGame]);
+
   return (
     <main className="game-page" tabIndex={0} ref={mainRef}>
+      <SharedResultBannerLoader />
       <header className="game-page__header">
-        <h1>Sky Strike</h1>
+        <div className="game-page__header-row">
+          <h1>Sky Strike</h1>
+          <AuthBar />
+        </div>
         <p className="game-page__hint">
           기체 선택(1/2) · PC: WASD / 방향키 / 하단 키패드 · 자동 발사 165ms · Lv10 보스
         </p>
@@ -1989,6 +2017,14 @@ export default function Home() {
           height={CANVAS_H}
           onPointerDown={onCanvasPointerDown}
         />
+        {gameOver && (
+          <GameOverPanel
+            score={gameOver.score}
+            stage={gameOver.stage}
+            plane={gameOver.plane}
+            onRestart={handleRestart}
+          />
+        )}
       </div>
 
       <div className="game-page__bottom">

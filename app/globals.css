@@ -80,6 +80,243 @@ body {
   touch-action: none;
 }
 
+.game-page__canvas-wrap {
+  position: relative;
+}
+
+/* ========== Google 로그인 / 프로필 ========== */
+.game-page__header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 16px;
+}
+
+.auth-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-bar__status {
+  font-size: 12px;
+  opacity: 0.65;
+}
+
+.auth-bar__google {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid #475569;
+  border-radius: 999px;
+  background: #0f172a;
+  color: #f1f5f9;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-bar__google:hover {
+  border-color: #64748b;
+  background: #1e293b;
+}
+
+.auth-bar__profile {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.auth-bar__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #334155;
+}
+
+.auth-bar__avatar--fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #1e293b;
+  font-size: 14px;
+}
+
+.auth-bar__name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-bar__best {
+  font-size: 11px;
+  color: #86efac;
+  white-space: nowrap;
+}
+
+.auth-bar__logout {
+  padding: 6px 10px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.auth-bar__logout:hover {
+  color: #e2e8f0;
+  border-color: #475569;
+}
+
+/* ========== 공유된 결과 배너 ========== */
+.shared-result {
+  margin: 0 auto 8px;
+  max-width: min(100%, 860px);
+  padding: 10px 14px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95));
+}
+
+.shared-result__title {
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.shared-result__body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.shared-result__body strong {
+  color: #fde047;
+}
+
+.shared-result__meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* ========== 게임 오버 패널 (캔버스 위) ========== */
+.game-over-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  background: rgba(2, 6, 23, 0.78);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+  text-align: center;
+}
+
+.game-over-panel__score {
+  margin: 0;
+  font-size: clamp(28px, 7vw, 40px);
+  font-weight: 800;
+  color: #fde047;
+}
+
+.game-over-panel__meta {
+  margin: 0;
+  font-size: 14px;
+  color: #cbd5e1;
+}
+
+.game-over-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.game-over-panel__btn {
+  padding: 10px 16px;
+  border: 1px solid #475569;
+  border-radius: 10px;
+  background: #1e293b;
+  color: #f8fafc;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.game-over-panel__btn:hover {
+  background: #334155;
+}
+
+.game-over-panel__btn--primary {
+  border-color: #22c55e;
+  background: linear-gradient(180deg, #16a34a, #15803d);
+}
+
+.game-over-panel__btn--primary:hover {
+  background: linear-gradient(180deg, #22c55e, #16a34a);
+}
+
+.game-over-panel__hint {
+  margin: 4px 0 0;
+  max-width: 320px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #94a3b8;
+}
+
+.game-over-panel__leaderboard {
+  margin-top: 8px;
+  width: min(100%, 280px);
+  padding: 10px 12px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.85);
+  text-align: left;
+}
+
+.game-over-panel__leaderboard-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.game-over-panel__leaderboard ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.game-over-panel__leaderboard li {
+  display: grid;
+  grid-template-columns: 1.4em 1fr auto;
+  gap: 6px;
+  font-size: 12px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+}
+
+.game-over-panel__leaderboard li:last-child {
+  border-bottom: none;
+}
+
+.game-over-panel__leaderboard li span:last-child {
+  color: #fde047;
+  font-variant-numeric: tabular-nums;
+}
+
 .pad-btn:active,
 .pad-btn[data-active="true"] {
   background: #334155;
@@ -112,6 +349,19 @@ body {
     flex-shrink: 0;
     text-align: center;
     padding: 6px 10px 4px;
+  }
+
+  .game-page__header-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .auth-bar__name {
+    max-width: 90px;
+  }
+
+  .auth-bar__best {
+    display: none;
   }
 
   .game-page__header h1 {

@@ -1,9 +1,15 @@
 import type { Metadata, Viewport } from "next";
+import { Providers } from "@/components/Providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Sky Strike",
-  description: "Simple 2D airplane shooter",
+  description: "2D airplane shooter — 점수를 공유하고 글로벌 랭킹에 도전하세요",
+  openGraph: {
+    title: "Sky Strike",
+    description: "2D airplane shooter",
+    type: "website",
+  },
 };
 
 export const viewport: Viewport = {
@@ -20,8 +26,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="ko">
+      <body>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
