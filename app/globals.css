@@ -84,6 +84,11 @@ body {
   position: relative;
 }
 
+/* ========== 모바일 가상 조이스틱 (데스크톱 숨김) ========== */
+.virtual-joystick {
+  display: none;
+}
+
 /* ========== Google 로그인 / 프로필 ========== */
 .auth-bar {
   display: flex;
@@ -605,31 +610,51 @@ body {
     border-radius: 6px;
   }
 
+  .virtual-joystick {
+    display: block;
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 48%;
+    height: 46%;
+    z-index: 12;
+    touch-action: none;
+  }
+
+  .virtual-joystick__base {
+    position: absolute;
+    left: max(14px, env(safe-area-inset-left, 14px));
+    bottom: 14px;
+    width: 112px;
+    height: 112px;
+    border-radius: 50%;
+    border: 2px solid rgba(148, 163, 184, 0.28);
+    background: rgba(15, 23, 42, 0.38);
+    backdrop-filter: blur(2px);
+    pointer-events: none;
+  }
+
+  .virtual-joystick__base--active {
+    border-color: rgba(56, 189, 248, 0.45);
+    background: rgba(15, 23, 42, 0.52);
+  }
+
+  .virtual-joystick__knob {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid rgba(56, 189, 248, 0.55);
+    background: rgba(56, 189, 248, 0.28);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
+    pointer-events: none;
+    will-change: transform;
+  }
+
   .game-page__bottom {
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    width: 100%;
-    padding: 8px 10px max(10px, env(safe-area-inset-bottom, 10px));
-    padding-left: max(10px, env(safe-area-inset-left, 10px));
-    padding-right: max(10px, env(safe-area-inset-right, 10px));
-    background: #06080d;
-    border-top: 1px solid #1e293b;
-  }
-
-  .game-page__bottom .mobile-pad {
-    max-width: none;
-    gap: 8px;
-  }
-
-  .game-page__bottom .pad-btn {
-    flex: 1 1 0;
-    min-width: 0;
-    max-width: none;
-    min-height: 52px;
-    font-size: 22px;
-    border-radius: 12px;
+    display: none;
   }
 
   .game-over-panel {

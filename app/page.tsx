@@ -10,6 +10,7 @@ import {
 } from "react";
 import { GameOverPanel } from "@/components/GameOverPanel";
 import { LobbyScreen } from "@/components/LobbyScreen";
+import { VirtualJoystick } from "@/components/VirtualJoystick";
 import type { SharePlane } from "@/lib/share";
 
 // --- Constants ---
@@ -61,7 +62,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.9.3";
+const GAME_VERSION = "0.9.4";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 
@@ -130,6 +131,7 @@ type TouchSteerState = {
   my: number;
   fingerX: number;
   fingerY: number;
+  source: "seek" | "joystick";
 };
 
 const EMPTY_TOUCH_STEER: TouchSteerState = {
@@ -138,6 +140,7 @@ const EMPTY_TOUCH_STEER: TouchSteerState = {
   my: 0,
   fingerX: 0,
   fingerY: 0,
+  source: "seek",
 };
 
 function clearTouchSteer(ts: TouchSteerState): void {
@@ -146,6 +149,7 @@ function clearTouchSteer(ts: TouchSteerState): void {
   ts.my = 0;
   ts.fingerX = 0;
   ts.fingerY = 0;
+  ts.source = "seek";
 }
 
 /** 손가락 위치 → 비행기 중심 기준 아날로그 이동 벡터 (거리 비례 속도) */
@@ -1564,7 +1568,7 @@ function drawPickupToast(
 
 function drawTouchGuide(ctx: CanvasRenderingContext2D, g: GameModel): void {
   const ts = g.touchSteer;
-  if (!ts.active || g.phase !== "playing") return;
+  if (!ts.active || g.phase !== "playing" || ts.source !== "seek") return;
 
   const p = g.player;
   const cx = p.x + p.w / 2;
@@ -1942,6 +1946,17 @@ export default function Home() {
     pointerId: null,
   });
   const uiPhaseRef = useRef<GamePhase>("select");
+  const isMobileRef = useRef(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const sync = () => {
+      isMobileRef.current = mq.matches;
+    };
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   tickRef.current = (ts: number) => {
     try {
@@ -2039,10 +2054,26 @@ export default function Home() {
     g.touchSteer.fingerY = pt.y;
     g.touchSteer.mx = mx;
     g.touchSteer.my = my;
+    g.touchSteer.source = "seek";
   }, []);
 
   const focusGame = useCallback(() => {
     mainRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  const applyJoystickMove = useCallback((mx: number, my: number) => {
+    const g = gameRef.current;
+    g.touchSteer.active = true;
+    g.touchSteer.mx = mx;
+    g.touchSteer.my = my;
+    g.touchSteer.fingerX = 0;
+    g.touchSteer.fingerY = 0;
+    g.touchSteer.source = "joystick";
+    resumeGameAudio();
+  }, []);
+
+  const applyJoystickEnd = useCallback(() => {
+    clearTouchSteer(gameRef.current.touchSteer);
   }, []);
 
   const onCanvasPointerDown = useCallback(
@@ -2050,18 +2081,18 @@ export default function Home() {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const g = gameRef.current;
-      const pt = canvasPointFromEvent(canvas, e.clientX, e.clientY);
 
       if (g.phase === "select") return;
 
       if (g.phase === "playing") {
+        if (isMobileRef.current) return;
         canvas.setPointerCapture(e.pointerId);
         touchSteerRef.current = { active: true, pointerId: e.pointerId };
         updateSteerFromPointer(e.clientX, e.clientY);
         resumeGameAudio();
       }
     },
-    [focusGame, updateSteerFromPointer]
+    [updateSteerFromPointer]
   );
 
   const onCanvasPointerMove = useCallback(
@@ -2204,6 +2235,9 @@ export default function Home() {
               onPointerUp={onCanvasPointerUp}
               onPointerCancel={onCanvasPointerCancel}
             />
+            {uiPhase === "playing" && (
+              <VirtualJoystick onMove={applyJoystickMove} onEnd={applyJoystickEnd} />
+            )}
             {gameOver && (
               <GameOverPanel
                 score={gameOver.score}

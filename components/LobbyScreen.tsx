@@ -84,7 +84,7 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
           </li>
           <li>
             <span className="lobby-screen__control-key">모바일</span>
-            화면 드래그 · 하단 키패드
+            왼쪽 조이스틱
           </li>
           <li>
             <span className="lobby-screen__control-key">공통</span>
