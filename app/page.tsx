@@ -54,7 +54,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.7.2";
+const GAME_VERSION = "0.7.3";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 
@@ -707,6 +707,8 @@ function updateLaserWeapon(g: GameModel, p: Player, dt: number, now: number): vo
 }
 
 let sfxAudioCtx: AudioContext | null = null;
+let lastPlayerHitSfxAt = 0;
+const PLAYER_HIT_SFX_COOLDOWN_MS = 140;
 
 function getSfxContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -723,6 +725,66 @@ function resumeGameAudio(): void {
   const ctx = getSfxContext();
   if (ctx && ctx.state === "suspended") {
     void ctx.resume();
+  }
+}
+
+function playSfxTone(
+  ctx: AudioContext,
+  t0: number,
+  type: OscillatorType,
+  freqStart: number,
+  freqEnd: number | null,
+  duration: number,
+  peak: number,
+  delay = 0
+): void {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = type;
+  const start = t0 + delay;
+  osc.frequency.setValueAtTime(freqStart, start);
+  if (freqEnd !== null && freqEnd !== freqStart) {
+    osc.frequency.exponentialRampToValueAtTime(
+      Math.max(freqEnd, 1),
+      start + duration * 0.72
+    );
+  }
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(peak, start + 0.014);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  osc.start(start);
+  osc.stop(start + duration + 0.02);
+}
+
+function playPlayerHitSound(now: number): void {
+  if (now - lastPlayerHitSfxAt < PLAYER_HIT_SFX_COOLDOWN_MS) return;
+  lastPlayerHitSfxAt = now;
+
+  const ctx = getSfxContext();
+  if (!ctx) return;
+  if (ctx.state === "suspended") void ctx.resume();
+
+  const t0 = ctx.currentTime;
+  playSfxTone(ctx, t0, "sawtooth", 220, 72, 0.17, 0.085);
+  playSfxTone(ctx, t0, "square", 110, 55, 0.11, 0.038, 0.018);
+}
+
+function playBossDefeatSound(): void {
+  const ctx = getSfxContext();
+  if (!ctx) return;
+  if (ctx.state === "suspended") void ctx.resume();
+
+  const t0 = ctx.currentTime;
+  const notes: { f: number; d: number; dur: number; p: number }[] = [
+    { f: 523, d: 0, dur: 0.15, p: 0.09 },
+    { f: 659, d: 0.08, dur: 0.15, p: 0.09 },
+    { f: 784, d: 0.16, dur: 0.15, p: 0.095 },
+    { f: 1047, d: 0.26, dur: 0.45, p: 0.11 },
+  ];
+  for (const n of notes) {
+    playSfxTone(ctx, t0, "triangle", n.f, null, n.dur, n.p, n.d);
   }
 }
 
@@ -838,6 +900,7 @@ function tryDropItem(g: GameModel, ex: number, ey: number): void {
 }
 
 function advanceStageAfterBoss(g: GameModel, now: number): void {
+  playBossDefeatSound();
   g.stage += 1;
   g.boss = null;
   g.bossSpawned = false;
@@ -1564,6 +1627,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
     if (!canTakeDamage) continue;
     if (!rectsOverlap(p.x, p.y, p.w, p.h, eb.x, eb.y, eb.w, eb.h)) continue;
     p.hp -= eb.damage;
+    playPlayerHitSound(now);
     eb.y = CANVAS_H + 999;
   }
   g.enemyBullets = g.enemyBullets.filter((eb) => eb.y < CANVAS_H + 100);
