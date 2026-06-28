@@ -7,8 +7,6 @@ import { RankingModal } from "@/components/RankingModal";
 import { SharedResultBannerLoader } from "@/components/SharedResultBannerLoader";
 import { UserProfilePanel } from "@/components/UserProfilePanel";
 import type { SharePlane } from "@/lib/share";
-import { BOMB_ATTACK_MULT } from "@/lib/combat";
-import { ItemLegendDock } from "@/components/ItemLegendDock";
 import { PlaneWeaponPreview } from "@/components/PlaneWeaponPreview";
 import { planeLabel } from "@/lib/share";
 
@@ -102,31 +100,6 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
             </button>
           ))}
         </div>
-      </section>
-
-      <section className="lobby-screen__items" aria-label="아이템 안내">
-        <h2 className="lobby-screen__section-title lobby-screen__section-title--sm">
-          드랍 아이템
-        </h2>
-        <ItemLegendDock />
-      </section>
-
-      <section className="lobby-screen__controls" aria-label="조작 안내">
-        <h2 className="lobby-screen__section-title lobby-screen__section-title--sm">조작</h2>
-        <ul className="lobby-screen__control-list">
-          <li>
-            <span className="lobby-screen__control-key">PC</span>
-            WASD · Q 스킬 · B 폭탄
-          </li>
-          <li>
-            <span className="lobby-screen__control-key">모바일</span>
-            하단 조이스틱 · ⚡ 스킬 · 💣 폭탄(×{BOMB_ATTACK_MULT.toLocaleString("ko-KR")})
-          </li>
-          <li>
-            <span className="lobby-screen__control-key">공통</span>
-            콤보·스테이지 보너스 · Lv10 보스 · 폭탄·생명(10%) 드랍
-          </li>
-        </ul>
       </section>
 
       <footer className="lobby-screen__footer">
