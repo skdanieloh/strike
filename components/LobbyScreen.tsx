@@ -87,7 +87,7 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
           </li>
           <li>
             <span className="lobby-screen__control-key">모바일</span>
-            왼쪽 조이스틱
+            하단 조이스틱
           </li>
           <li>
             <span className="lobby-screen__control-key">공통</span>

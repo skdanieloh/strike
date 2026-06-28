@@ -62,7 +62,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.10.0";
+const GAME_VERSION = "0.10.1";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 
@@ -2235,9 +2235,6 @@ export default function Home() {
               onPointerUp={onCanvasPointerUp}
               onPointerCancel={onCanvasPointerCancel}
             />
-            {uiPhase === "playing" && (
-              <VirtualJoystick onMove={applyJoystickMove} onEnd={applyJoystickEnd} />
-            )}
             {gameOver && (
               <GameOverPanel
                 score={gameOver.score}
@@ -2248,7 +2245,13 @@ export default function Home() {
             )}
           </div>
 
-          <div className="game-page__bottom">
+          {uiPhase === "playing" && (
+            <div className="game-page__bottom game-page__bottom--joystick">
+              <VirtualJoystick onMove={applyJoystickMove} onEnd={applyJoystickEnd} />
+            </div>
+          )}
+
+          <div className="game-page__bottom game-page__bottom--keypad">
             <div className="mobile-pad" aria-label="이동 버튼">
               {padBtn("left", "왼쪽", "←")}
               {padBtn("up", "위", "↑")}

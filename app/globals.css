@@ -731,7 +731,9 @@ body {
 
   .game-page--playing .game-page__canvas-wrap,
   .game-page--gameover .game-page__canvas-wrap {
-    padding: 2px 0;
+    padding: 2px 0 0;
+    justify-content: center;
+    align-items: center;
   }
 
   .game-page__canvas-wrap {
@@ -745,8 +747,8 @@ body {
   }
 
   .game-page__canvas-wrap .game-canvas {
-    width: auto;
-    height: 100%;
+    width: 100%;
+    height: auto;
     max-width: 100%;
     max-height: 100%;
     aspect-ratio: var(--game-canvas-w) / var(--game-canvas-h);
@@ -754,21 +756,42 @@ body {
     border-radius: 6px;
   }
 
+  .game-page__bottom--joystick {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    padding: 6px 12px max(10px, env(safe-area-inset-bottom, 10px));
+    padding-left: max(12px, env(safe-area-inset-left, 12px));
+    padding-right: max(12px, env(safe-area-inset-right, 12px));
+    background: transparent;
+    border-top: none;
+  }
+
+  .game-page__bottom--joystick .mobile-pad {
+    display: none;
+  }
+
+  .game-page__bottom--keypad {
+    display: none;
+  }
+
   .virtual-joystick {
-    display: block;
-    position: absolute;
-    left: 0;
-    bottom: 0;
-    width: 48%;
-    height: 46%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    width: min(280px, 78vw);
+    height: 120px;
     z-index: 12;
     touch-action: none;
   }
 
   .virtual-joystick__base {
-    position: absolute;
-    left: max(14px, env(safe-area-inset-left, 14px));
-    bottom: 14px;
+    position: relative;
+    left: auto;
+    bottom: auto;
     width: 112px;
     height: 112px;
     border-radius: 50%;
@@ -797,7 +820,7 @@ body {
     will-change: transform;
   }
 
-  .game-page__bottom {
+  .game-page__bottom--keypad {
     display: none;
   }
 
@@ -824,6 +847,10 @@ body {
 
 /* ========== 데스크톱 ========== */
 @media (min-width: 769px) {
+  .game-page__bottom--joystick {
+    display: none;
+  }
+
   .game-page {
     min-height: 100vh;
     min-height: 100dvh;
@@ -869,7 +896,7 @@ body {
     border-radius: 8px;
   }
 
-  .game-page__bottom {
+  .game-page__bottom--keypad {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -879,7 +906,7 @@ body {
     padding-bottom: 8px;
   }
 
-  .game-page__bottom .mobile-pad {
+  .game-page__bottom--keypad .mobile-pad {
     max-width: 400px;
   }
 }
