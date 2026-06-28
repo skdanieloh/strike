@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { GlobalRankingBoard } from "@/components/GlobalRankingBoard";
+import { formatPlayDuration } from "@/lib/format";
 import {
   buildShareText,
   buildShareUrl,
@@ -14,10 +15,19 @@ type GameOverPanelProps = {
   score: number;
   stage: number;
   plane: SharePlane;
+  durationMs: number;
   onRestart: () => void;
+  onGoHome: () => void;
 };
 
-export function GameOverPanel({ score, stage, plane, onRestart }: GameOverPanelProps) {
+export function GameOverPanel({
+  score,
+  stage,
+  plane,
+  durationMs,
+  onRestart,
+  onGoHome,
+}: GameOverPanelProps) {
   const { data: session, update } = useSession();
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [cloudStatus, setCloudStatus] = useState<string | null>(null);
@@ -46,12 +56,15 @@ export function GameOverPanel({ score, stage, plane, onRestart }: GameOverPanelP
       const res = await fetch("/api/scores", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ score, stage, plane }),
+        body: JSON.stringify({ score, stage, plane, durationMs }),
       });
       const data = (await res.json()) as {
         saved?: boolean;
+        planeSaved?: boolean;
+        historySaved?: boolean;
         cloudEnabled?: boolean;
         rank?: number | null;
+        planeRank?: number | null;
         message?: string;
       };
       if (!res.ok) {
@@ -62,19 +75,24 @@ export function GameOverPanel({ score, stage, plane, onRestart }: GameOverPanelP
         setCloudStatus("로그인 기록은 저장됐어요. 글로벌 랭킹은 서버 설정 후 이용 가능합니다.");
         return;
       }
-      if (data.saved) {
-        const rankText =
-          typeof data.rank === "number" ? ` · 현재 #${data.rank}` : "";
-        setCloudStatus(`글로벌 랭킹에 기록했습니다!${rankText}`);
+      if (data.historySaved) {
+        const globalText =
+          typeof data.rank === "number" ? `글로벌 #${data.rank}` : "글로벌 기록 없음";
+        const planeText =
+          typeof data.planeRank === "number" ? `${planeLabel(plane)} #${data.planeRank}` : "";
+        const savedNote =
+          data.saved || data.planeSaved
+            ? " · 최고 기록 갱신!"
+            : " · 플레이 기록 저장됨";
+        setCloudStatus(`${globalText}${planeText ? ` · ${planeText}` : ""}${savedNote}`);
         setRankRefreshKey((k) => k + 1);
-      } else {
-        setCloudStatus("이전 최고 기록보다 낮아 저장하지 않았습니다.");
-        setRankRefreshKey((k) => k + 1);
+        return;
       }
+      setCloudStatus("플레이 기록을 저장하지 못했습니다.");
     } catch {
       setCloudStatus("클라우드 저장을 불러오지 못했습니다.");
     }
-  }, [session, score, stage, plane, update]);
+  }, [session, score, stage, plane, durationMs, update]);
 
   useEffect(() => {
     void persistScore();
@@ -106,7 +124,7 @@ export function GameOverPanel({ score, stage, plane, onRestart }: GameOverPanelP
     <div className="game-over-panel" role="dialog" aria-label="게임 결과">
       <p className="game-over-panel__score">{score.toLocaleString()}점</p>
       <p className="game-over-panel__meta">
-        Stage {stage} · {planeLabel(plane)}
+        Stage {stage} · {planeLabel(plane)} · {formatPlayDuration(durationMs)}
       </p>
 
       <div className="game-over-panel__actions">
@@ -116,6 +134,9 @@ export function GameOverPanel({ score, stage, plane, onRestart }: GameOverPanelP
         <button type="button" className="game-over-panel__btn" onClick={onRestart}>
           다시 하기
         </button>
+        <button type="button" className="game-over-panel__btn game-over-panel__btn--ghost" onClick={onGoHome}>
+          홈으로 나가기
+        </button>
       </div>
 
       {shareStatus && <p className="game-over-panel__hint">{shareStatus}</p>}
@@ -124,7 +145,7 @@ export function GameOverPanel({ score, stage, plane, onRestart }: GameOverPanelP
       )}
       {!session?.user && (
         <p className="game-over-panel__hint">
-          Google 로그인하면 최고 기록이 저장되고 글로벌 랭킹에 올릴 수 있어요.
+          Google 로그인하면 플레이 기록·랭킹이 저장됩니다.
         </p>
       )}
 

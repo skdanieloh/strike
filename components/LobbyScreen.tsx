@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { AuthBar } from "@/components/AuthBar";
-import { GlobalRankingBoard } from "@/components/GlobalRankingBoard";
+import { RankingModal } from "@/components/RankingModal";
 import { SharedResultBannerLoader } from "@/components/SharedResultBannerLoader";
+import { UserProfilePanel } from "@/components/UserProfilePanel";
 import type { SharePlane } from "@/lib/share";
 import { planeLabel } from "@/lib/share";
 
@@ -35,6 +37,9 @@ const PLANES: {
 ];
 
 export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
+  const [rankingOpen, setRankingOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+
   return (
     <div className="lobby-screen" aria-label="게임 로비">
       <header className="lobby-screen__hero">
@@ -46,7 +51,17 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
       <SharedResultBannerLoader />
 
       <div className="lobby-screen__auth">
-        <AuthBar />
+        <AuthBar onOpenProfile={() => setProfileOpen(true)} />
+      </div>
+
+      <div className="lobby-screen__quick-actions">
+        <button
+          type="button"
+          className="lobby-screen__action-btn lobby-screen__action-btn--primary"
+          onClick={() => setRankingOpen(true)}
+        >
+          🏆 랭킹 보기
+        </button>
       </div>
 
       <section className="lobby-screen__planes" aria-labelledby="lobby-planes-heading">
@@ -76,8 +91,6 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
         </div>
       </section>
 
-      <GlobalRankingBoard limit={20} title="글로벌 랭킹" />
-
       <section className="lobby-screen__controls" aria-label="조작 안내">
         <h2 className="lobby-screen__section-title lobby-screen__section-title--sm">조작</h2>
         <ul className="lobby-screen__control-list">
@@ -99,6 +112,9 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
       <footer className="lobby-screen__footer">
         <p className="lobby-screen__version">v{version}</p>
       </footer>
+
+      <RankingModal open={rankingOpen} onClose={() => setRankingOpen(false)} />
+      <UserProfilePanel open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );
 }

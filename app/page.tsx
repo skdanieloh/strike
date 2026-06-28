@@ -9,6 +9,7 @@ import {
   type TouchEvent as ReactTouchEvent,
 } from "react";
 import { GameOverPanel } from "@/components/GameOverPanel";
+import { ItemLegendDock } from "@/components/ItemLegendDock";
 import { LobbyScreen } from "@/components/LobbyScreen";
 import { VirtualJoystick } from "@/components/VirtualJoystick";
 import type { SharePlane } from "@/lib/share";
@@ -62,7 +63,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.10.2";
+const GAME_VERSION = "0.11.1";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 const MOBILE_PICKUP_TOAST_MS = 1300;
@@ -346,6 +347,8 @@ type GameModel = {
   pickupToast: PickupToast | null;
   /** tick에서 갱신 — 모바일 HUD·토스트 타이밍 */
   hudMobile: boolean;
+  /** playing 시작 시각(ms) — 플레이 시간 기록 */
+  playStartedAt: number;
 };
 
 // --- Pure helpers ---
@@ -471,6 +474,7 @@ function createGameModel(): GameModel {
     healPulse: null,
     pickupToast: null,
     hudMobile: false,
+    playStartedAt: 0,
   };
 }
 
@@ -521,6 +525,7 @@ function beginPlaying(g: GameModel, plane: PlaneType, now: number): void {
     ENEMY_SPAWN_MAX_MS * spawnIntervalScale(1, 1)
   );
   g.lastPlayerShot = now;
+  g.playStartedAt = now;
 }
 
 function trySelectPlane(g: GameModel, x: number, y: number, now: number): boolean {
@@ -1417,8 +1422,8 @@ type HudLayout = {
   bossY: number;
   toastYRatio: number;
   toastFont: string;
-  legendY: number;
   showVersion: boolean;
+  showLegend: boolean;
 };
 
 function getHudLayout(mobile: boolean): HudLayout {
@@ -1443,19 +1448,18 @@ function getHudLayout(mobile: boolean): HudLayout {
       bossY: 86,
       toastYRatio: 0.36,
       toastFont: "bold 26px ui-sans-serif, system-ui",
-      legendY: CANVAS_H - 26,
       showVersion: true,
+      showLegend: true,
     };
   }
 
-  const marginX = 14;
+  const marginX = 10;
   const barW = CANVAS_W - marginX * 2;
-  const hpBarH = 22;
-  const expBarH = 18;
-  const hpY = 14;
-  const expY = hpY + hpBarH + 8;
-  const statY1 = expY + expBarH + 14;
-  const statY2 = statY1 + 24;
+  const hpBarH = 28;
+  const expBarH = 5;
+  const hpY = 8;
+  const expY = hpY + hpBarH + 5;
+  const statY1 = expY + expBarH + 10;
 
   return {
     mobile: true,
@@ -1466,27 +1470,27 @@ function getHudLayout(mobile: boolean): HudLayout {
     hpY,
     expY,
     statY1,
-    statY2,
-    fontHp: "bold 18px ui-sans-serif, system-ui",
-    fontExp: "16px ui-monospace, monospace",
-    fontStat: "16px ui-monospace, monospace",
-    fontStatBold: "bold 20px ui-monospace, monospace",
-    fontBossTitle: "bold 20px ui-sans-serif, system-ui",
-    fontBossHp: "16px ui-monospace, monospace",
-    bossBarH: 26,
-    bossY: statY2 + 16,
-    toastYRatio: 0.27,
+    statY2: statY1,
+    fontHp: "bold 17px ui-sans-serif, system-ui",
+    fontExp: "13px ui-monospace, monospace",
+    fontStat: "15px ui-monospace, monospace",
+    fontStatBold: "bold 17px ui-monospace, monospace",
+    fontBossTitle: "bold 19px ui-sans-serif, system-ui",
+    fontBossHp: "15px ui-monospace, monospace",
+    bossBarH: 24,
+    bossY: statY1 + 22,
+    toastYRatio: 0.3,
     toastFont: "bold 38px ui-sans-serif, system-ui",
-    legendY: CANVAS_H - 38,
     showVersion: false,
+    showLegend: false,
   };
 }
 
 function hudBackdropHeight(g: GameModel, layout: HudLayout): number {
   if (g.boss && g.boss.hp > 0) {
-    return layout.bossY + layout.bossBarH + 28;
+    return layout.bossY + layout.bossBarH + 24;
   }
-  return layout.statY2 + 10;
+  return layout.statY1 + 14;
 }
 
 function drawHudBackdrop(
@@ -1496,7 +1500,10 @@ function drawHudBackdrop(
 ): void {
   if (!layout.mobile || g.phase !== "playing") return;
   const h = hudBackdropHeight(g, layout);
-  ctx.fillStyle = "rgba(2, 6, 23, 0.52)";
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, "rgba(2, 6, 23, 0.58)");
+  grad.addColorStop(1, "rgba(2, 6, 23, 0)");
+  ctx.fillStyle = grad;
   ctx.fillRect(0, 0, CANVAS_W, h);
 }
 
@@ -1516,11 +1523,81 @@ function drawOutlinedText(
   ctx.fillText(text, x, y);
 }
 
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+): void {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+function fillRoundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+): void {
+  roundRectPath(ctx, x, y, w, h, r);
+  ctx.fill();
+}
+
+function strokeRoundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+): void {
+  roundRectPath(ctx, x, y, w, h, r);
+  ctx.stroke();
+}
+
+function drawMobileScoreBadge(
+  ctx: CanvasRenderingContext2D,
+  score: number,
+  layout: HudLayout
+): void {
+  const text = score.toLocaleString();
+  ctx.font = layout.fontStatBold;
+  const tw = ctx.measureText(text).width;
+  const padX = 10;
+  const bh = layout.hpBarH;
+  const bw = tw + padX * 2;
+  const bx = layout.marginX + layout.barW - bw;
+  const by = layout.hpY;
+
+  fillRoundRect(ctx, bx, by, bw, bh, bh / 2);
+  ctx.strokeStyle = "rgba(250, 204, 21, 0.35)";
+  ctx.lineWidth = 1.5;
+  strokeRoundRect(ctx, bx + 0.5, by + 0.5, bw - 1, bh - 1, bh / 2);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  drawOutlinedText(ctx, text, bx + bw / 2, by + bh / 2, "#fde047", "rgba(0,0,0,0.55)", 2);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+}
+
 function drawItemLegend(
   ctx: CanvasRenderingContext2D,
   planeType: PlaneType,
   layout: HudLayout
 ): void {
+  if (!layout.showLegend) return;
+
   const missileLabel = planeType === "spread" ? "탄환↑" : "레이저↑";
   const entries: { color: string; label: string; sym: string }[] = [
     { color: "#3ecf8e", label: "HP회복", sym: "+" },
@@ -1528,38 +1605,7 @@ function drawItemLegend(
     { color: "#f0b429", label: "공격↑", sym: "P" },
   ];
 
-  if (layout.mobile) {
-    const chipW = 112;
-    const chipH = 28;
-    const gap = 8;
-    const totalW = entries.length * chipW + (entries.length - 1) * gap;
-    let x = (CANVAS_W - totalW) / 2;
-    const y = layout.legendY;
-
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    for (const e of entries) {
-      ctx.fillStyle = "rgba(2, 6, 23, 0.72)";
-      ctx.fillRect(x, y - chipH / 2, chipW, chipH);
-      ctx.strokeStyle = "rgba(148, 163, 184, 0.35)";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(x + 0.5, y - chipH / 2 + 0.5, chipW - 1, chipH - 1);
-      ctx.fillStyle = e.color;
-      ctx.beginPath();
-      ctx.arc(x + 16, y, 9, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.font = "bold 13px ui-monospace, monospace";
-      ctx.fillStyle = "#0f172a";
-      ctx.fillText(e.sym, x + 13, y + 1);
-      ctx.font = "bold 15px ui-sans-serif, system-ui";
-      ctx.fillStyle = "#f1f5f9";
-      ctx.fillText(e.label, x + 30, y);
-      x += chipW + gap;
-    }
-    return;
-  }
-
-  const y = layout.legendY;
+  const y = CANVAS_H - 26;
   let x = 14;
   ctx.font = "11px ui-monospace, monospace";
   ctx.textAlign = "left";
@@ -1610,6 +1656,9 @@ function drawPlayerHpBar(
 
   const hpRatio = Math.max(0, Math.min(1, displayHp / p.maxHp));
 
+  const hpRadius = layout.mobile ? barH / 2 : 2;
+  const hpDrawW = layout.mobile ? barW - 112 : barW;
+
   if (pulsing) {
     const glowA = 0.35 + Math.sin((now - healPulse!.startAt) / 90) * 0.2;
     ctx.save();
@@ -1617,38 +1666,54 @@ function drawPlayerHpBar(
     ctx.shadowBlur = 14 * pulseScale;
     ctx.strokeStyle = `rgba(74, 222, 128, ${glowA})`;
     ctx.lineWidth = 3;
-    ctx.strokeRect(x - 2, y - 2, barW + 4, barH + 4);
+    ctx.strokeRect(x - 2, y - 2, hpDrawW + 4, barH + 4);
     ctx.restore();
   }
 
   ctx.fillStyle = "#1f2937";
-  ctx.fillRect(x, y, barW, barH);
+  if (layout.mobile) {
+    fillRoundRect(ctx, x, y, hpDrawW, barH, hpRadius);
+  } else {
+    ctx.fillRect(x, y, hpDrawW, barH);
+  }
 
   if (pulsing && healPulse) {
     const oldRatio = Math.max(0, Math.min(1, healPulse.fromHp / p.maxHp));
     ctx.fillStyle = "rgba(34, 197, 94, 0.25)";
-    ctx.fillRect(x, y, barW * oldRatio, barH);
+    if (layout.mobile) {
+      fillRoundRect(ctx, x, y, hpDrawW * oldRatio, barH, hpRadius);
+    } else {
+      ctx.fillRect(x, y, hpDrawW * oldRatio, barH);
+    }
   }
 
   ctx.fillStyle = pulsing ? "#4ade80" : hpRatio > 0.35 ? "#22c55e" : "#ef4444";
-  ctx.fillRect(x, y, barW * hpRatio, barH);
+  if (layout.mobile) {
+    if (hpRatio > 0) fillRoundRect(ctx, x, y, hpDrawW * hpRatio, barH, hpRadius);
+  } else {
+    ctx.fillRect(x, y, hpDrawW * hpRatio, barH);
+  }
 
-  ctx.strokeStyle = pulsing ? "#bbf7d0" : "#9ca3af";
-  ctx.lineWidth = pulsing ? 2 : 1;
-  ctx.strokeRect(x + 0.5, y + 0.5, barW - 1, barH - 1);
+  ctx.strokeStyle = pulsing ? "#bbf7d0" : layout.mobile ? "rgba(148, 163, 184, 0.35)" : "#9ca3af";
+  ctx.lineWidth = pulsing ? 2 : layout.mobile ? 1 : 1;
+  if (layout.mobile) {
+    strokeRoundRect(ctx, x + 0.5, y + 0.5, hpDrawW - 1, barH - 1, hpRadius);
+  } else {
+    ctx.strokeRect(x + 0.5, y + 0.5, hpDrawW - 1, barH - 1);
+  }
 
   const hpText = `HP ${Math.max(0, Math.ceil(displayHp))}/${p.maxHp}`;
   ctx.font = layout.fontHp;
 
   if (layout.mobile) {
-    ctx.textAlign = "center";
+    ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    drawOutlinedText(ctx, hpText, x + barW / 2, y + barH / 2, pulsing ? "#ecfdf5" : "#f8fafc");
+    drawOutlinedText(ctx, hpText, x + 14, y + barH / 2, pulsing ? "#ecfdf5" : "#f8fafc", "rgba(0,0,0,0.55)", 2);
     if (pulsing) {
-      ctx.font = "bold 16px ui-sans-serif, system-ui";
+      ctx.font = "bold 14px ui-sans-serif, system-ui";
       ctx.textAlign = "right";
       ctx.textBaseline = "alphabetic";
-      drawOutlinedText(ctx, "+회복", x + barW - 6, y - 4, "#86efac");
+      drawOutlinedText(ctx, "+회복", x + hpDrawW - 8, y - 3, "#86efac", "rgba(0,0,0,0.45)", 2);
     }
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
@@ -1876,25 +1941,42 @@ function drawGame(
 
   drawPlayerHpBar(ctx, p, g.healPulse, now, layout);
 
+  if (layout.mobile) {
+    drawMobileScoreBadge(ctx, g.score, layout);
+  }
+
   const need = expToNextLevel(p.level);
   const expRatio = Math.min(1, p.exp / need);
   const expX = layout.marginX;
   const expY = layout.expY;
-  ctx.fillStyle = "#1f2937";
-  ctx.fillRect(expX, expY, layout.barW, layout.expBarH);
-  ctx.fillStyle = "#6366f1";
-  ctx.fillRect(expX, expY, layout.barW * expRatio, layout.expBarH);
-  ctx.strokeStyle = "#9ca3af";
-  ctx.lineWidth = layout.mobile ? 1.5 : 1;
-  ctx.strokeRect(expX, expY, layout.barW, layout.expBarH);
+  const expRadius = layout.mobile ? layout.expBarH / 2 : 0;
+
+  ctx.fillStyle = layout.mobile ? "rgba(15, 23, 42, 0.72)" : "#1f2937";
+  if (layout.mobile) {
+    fillRoundRect(ctx, expX, expY, layout.barW, layout.expBarH, expRadius);
+  } else {
+    ctx.fillRect(expX, expY, layout.barW, layout.expBarH);
+  }
+
+  ctx.fillStyle = layout.mobile ? "#818cf8" : "#6366f1";
+  if (layout.mobile) {
+    if (expRatio > 0) fillRoundRect(ctx, expX, expY, layout.barW * expRatio, layout.expBarH, expRadius);
+  } else {
+    ctx.fillRect(expX, expY, layout.barW * expRatio, layout.expBarH);
+  }
+
+  if (!layout.mobile) {
+    ctx.strokeStyle = "#9ca3af";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(expX, expY, layout.barW, layout.expBarH);
+  }
 
   const expText = `EXP ${Math.floor(p.exp)}/${need}`;
   ctx.font = layout.fontExp;
   if (layout.mobile) {
-    ctx.textAlign = "right";
-    ctx.textBaseline = "alphabetic";
-    drawOutlinedText(ctx, expText, expX + layout.barW, expY - 4, "#c7d2fe", "rgba(0,0,0,0.5)", 2);
     ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    drawOutlinedText(ctx, expText, expX, expY - 3, "#a5b4fc", "rgba(0,0,0,0.45)", 2);
   } else {
     ctx.fillStyle = "#e5e7eb";
     ctx.fillText(expText, 18, 41);
@@ -1908,17 +1990,8 @@ function drawGame(
 
   if (layout.mobile) {
     ctx.font = layout.fontStat;
-    ctx.fillStyle = "#e2e8f0";
-    const row1 = `St.${g.stage}  ·  Lv.${p.level}  ·  ${planeLabel} W${p.weaponLevel}`;
-    drawOutlinedText(ctx, row1, layout.marginX, layout.statY1, "#e2e8f0", "rgba(0,0,0,0.45)", 2);
-
-    ctx.font = layout.fontStatBold;
-    const scoreText = `${g.score.toLocaleString()}점`;
-    drawOutlinedText(ctx, scoreText, layout.marginX, layout.statY2, "#fde047", "rgba(0,0,0,0.55)", 2);
-    ctx.textAlign = "right";
-    ctx.font = layout.fontStat;
-    drawOutlinedText(ctx, weaponStat, layout.marginX + layout.barW, layout.statY2, "#94a3b8", "rgba(0,0,0,0.45)", 2);
-    ctx.textAlign = "left";
+    const row1 = `St.${g.stage} · Lv.${p.level} · ${planeLabel} W${p.weaponLevel} · ${weaponStat}`;
+    drawOutlinedText(ctx, row1, layout.marginX, layout.statY1, "#cbd5e1", "rgba(0,0,0,0.4)", 2);
   } else {
     ctx.fillStyle = "#f9fafb";
     ctx.font = layout.fontStat;
@@ -2174,8 +2247,10 @@ export default function Home() {
     score: number;
     stage: number;
     plane: SharePlane;
+    durationMs: number;
   } | null>(null);
   const [uiPhase, setUiPhase] = useState<GamePhase>("select");
+  const [playingPlane, setPlayingPlane] = useState<SharePlane>("spread");
   const touchSteerRef = useRef<{ active: boolean; pointerId: number | null }>({
     active: false,
     pointerId: null,
@@ -2222,10 +2297,13 @@ export default function Home() {
       if (g.phase === "gameover" && !endedRef.current) {
         endedRef.current = true;
         rankingRef.current = saveRankingScore(g.score);
+        const durationMs =
+          g.playStartedAt > 0 ? Math.max(0, Math.round(ts - g.playStartedAt)) : 0;
         const summary = {
           score: g.score,
           stage: g.stage,
           plane: g.player.planeType as SharePlane,
+          durationMs,
         };
         queueMicrotask(() => setGameOver(summary));
       }
@@ -2365,6 +2443,7 @@ export default function Home() {
 
   const handleSelectPlane = useCallback(
     (plane: PlaneType) => {
+      setPlayingPlane(plane);
       beginPlaying(gameRef.current, plane, performance.now());
       uiPhaseRef.current = "playing";
       setUiPhase("playing");
@@ -2425,7 +2504,7 @@ export default function Home() {
     };
   }, [focusGame, handleSelectPlane]);
 
-  const handleRestart = useCallback(() => {
+  const handleGoHome = useCallback(() => {
     endedRef.current = false;
     rankingRef.current = loadRanking();
     gameRef.current = createGameModel();
@@ -2436,6 +2515,21 @@ export default function Home() {
     clearTouchSteer(gameRef.current.touchSteer);
     focusGame();
   }, [focusGame]);
+
+  const handleRestart = useCallback(() => {
+    const plane = gameOver?.plane ?? gameRef.current.player.planeType;
+    setPlayingPlane(plane);
+    endedRef.current = false;
+    rankingRef.current = loadRanking();
+    const g = createGameModel();
+    gameRef.current = g;
+    beginPlaying(g, plane, performance.now());
+    uiPhaseRef.current = "playing";
+    setUiPhase("playing");
+    setGameOver(null);
+    touchSteerRef.current = { active: false, pointerId: null };
+    focusGame();
+  }, [focusGame, gameOver?.plane]);
 
   const pageClassName =
     uiPhase === "playing"
@@ -2476,14 +2570,20 @@ export default function Home() {
                 score={gameOver.score}
                 stage={gameOver.stage}
                 plane={gameOver.plane}
+                durationMs={gameOver.durationMs}
                 onRestart={handleRestart}
+                onGoHome={handleGoHome}
               />
             )}
           </div>
 
           {uiPhase === "playing" && (
             <div className="game-page__bottom game-page__bottom--joystick">
-              <VirtualJoystick onMove={applyJoystickMove} onEnd={applyJoystickEnd} />
+              <div className="game-page__bottom-dock">
+                <ItemLegendDock plane={playingPlane} side="left" />
+                <VirtualJoystick onMove={applyJoystickMove} onEnd={applyJoystickEnd} />
+                <ItemLegendDock plane={playingPlane} side="right" />
+              </div>
             </div>
           )}
 

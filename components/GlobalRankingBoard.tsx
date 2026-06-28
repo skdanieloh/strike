@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { planeLabel } from "@/lib/share";
-import type { RankedScoreRecord } from "@/lib/scores";
+import type { GamePlane, RankedScoreRecord } from "@/lib/scores";
 
 type GlobalRankingBoardProps = {
   limit?: number;
   compact?: boolean;
   title?: string;
   refreshKey?: number;
+  plane?: GamePlane;
 };
 
 type RankingResponse = {
@@ -32,6 +33,7 @@ export function GlobalRankingBoard({
   compact = false,
   title = "글로벌 랭킹",
   refreshKey = 0,
+  plane,
 }: GlobalRankingBoardProps) {
   const { data: session } = useSession();
   const [scores, setScores] = useState<RankedScoreRecord[]>([]);
@@ -46,7 +48,8 @@ export function GlobalRankingBoard({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/scores?limit=${limit}`, { cache: "no-store" });
+      const planeQuery = plane ? `&plane=${plane}` : "";
+      const res = await fetch(`/api/scores?limit=${limit}${planeQuery}`, { cache: "no-store" });
       if (!res.ok) {
         setError("랭킹을 불러오지 못했습니다.");
         return;
@@ -62,7 +65,7 @@ export function GlobalRankingBoard({
     } finally {
       setLoading(false);
     }
-  }, [limit]);
+  }, [limit, plane]);
 
   useEffect(() => {
     void load();
@@ -91,7 +94,7 @@ export function GlobalRankingBoard({
 
       {session?.user && cloudEnabled && myRank !== null && myRecord && (
         <div className="global-ranking__mine">
-          <span className="global-ranking__mine-label">내 순위</span>
+          <span className="global-ranking__mine-label">{plane ? "내 기종 순위" : "내 순위"}</span>
           <span className="global-ranking__mine-rank">#{myRank}</span>
           <span className="global-ranking__mine-score">{myRecord.score.toLocaleString()}점</span>
           <span className="global-ranking__mine-detail">

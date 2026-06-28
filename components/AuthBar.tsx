@@ -4,9 +4,10 @@ import { signIn, signOut, useSession } from "next-auth/react";
 
 type AuthBarProps = {
   compact?: boolean;
+  onOpenProfile?: () => void;
 };
 
-export function AuthBar({ compact = false }: AuthBarProps) {
+export function AuthBar({ compact = false, onOpenProfile }: AuthBarProps) {
   const { data: session, status } = useSession();
   const loading = status === "loading";
 
@@ -36,7 +37,12 @@ export function AuthBar({ compact = false }: AuthBarProps) {
   const { user } = session;
   return (
     <div className={`auth-bar${compact ? " auth-bar--compact" : ""}`}>
-      <div className="auth-bar__profile">
+      <button
+        type="button"
+        className="auth-bar__profile auth-bar__profile--button"
+        onClick={onOpenProfile}
+        aria-label="프로필 및 플레이 기록 보기"
+      >
         {user.image ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -59,7 +65,7 @@ export function AuthBar({ compact = false }: AuthBarProps) {
             )}
           </>
         )}
-      </div>
+      </button>
       {!compact && (
         <button type="button" className="auth-bar__logout" onClick={() => signOut()}>
           로그아웃
