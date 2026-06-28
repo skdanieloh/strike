@@ -14,6 +14,7 @@ import { GameOverPanel } from "@/components/GameOverPanel";
 import { LobbyScreen } from "@/components/LobbyScreen";
 import { VirtualJoystick } from "@/components/VirtualJoystick";
 import type { SharePlane } from "@/lib/share";
+import { GAME_VERSION } from "@/lib/version";
 
 // --- Constants ---
 const CANVAS_W = 800;
@@ -63,8 +64,6 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 /** 적 탄이 플레이어에게 맞기 시작하기까지 (생성 위치 겹침 방지) */
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
-/** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.12.1";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 const MOBILE_PICKUP_TOAST_MS = 1300;

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AuthBar } from "@/components/AuthBar";
+import { LobbyRefreshButton } from "@/components/LobbyRefreshButton";
 import { RankingModal } from "@/components/RankingModal";
 import { SharedResultBannerLoader } from "@/components/SharedResultBannerLoader";
 import { UserProfilePanel } from "@/components/UserProfilePanel";
@@ -44,6 +45,7 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
 
   return (
     <div className="lobby-screen" aria-label="게임 로비">
+      <LobbyRefreshButton currentVersion={version} />
       <header className="lobby-screen__hero">
         <p className="lobby-screen__eyebrow">2D 슈팅</p>
         <h1 className="lobby-screen__title">Sky Strike</h1>
