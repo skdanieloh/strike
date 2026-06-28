@@ -54,7 +54,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.7.3";
+const GAME_VERSION = "0.8.0";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 
@@ -425,6 +425,7 @@ function waveSizeForLevel(level: number): number {
 
 function beginPlaying(g: GameModel, plane: PlaneType, now: number): void {
   resumeGameAudio();
+  playGameStartSound();
   g.player = createInitialPlayer(plane);
   g.enemies = [];
   g.boss = null;
@@ -534,9 +535,10 @@ function spawnBoss(g: GameModel, now: number): void {
     g.playerInvulnerableUntil,
     now + BOSS_ENTRY_INVULN_MS
   );
+  playBossSpawnSound();
 }
 
-function spawnSpreadBullets(g: GameModel, p: Player): void {
+function spawnSpreadBullets(g: GameModel, p: Player, now: number): void {
   const count = Math.min(
     Math.max(3, Math.floor(p.missileCount)),
     MAX_SPREAD_PER_SHOT
@@ -567,6 +569,7 @@ function spawnSpreadBullets(g: GameModel, p: Player): void {
       vy: Math.sin(angle) * speed,
     });
   }
+  playSpreadShotSound(now);
 }
 
 function pointOnQuadBezier(
@@ -656,6 +659,7 @@ function findLaserTarget(
 }
 
 function killEnemy(g: GameModel, e: Enemy, idx: number, now: number): void {
+  playEnemyKillSound(now);
   const p = g.player;
   g.score += SCORE_ENEMY;
   p.exp += EXP_PER_KILL;
@@ -665,6 +669,8 @@ function killEnemy(g: GameModel, e: Enemy, idx: number, now: number): void {
 }
 
 function updateLaserWeapon(g: GameModel, p: Player, dt: number, now: number): void {
+  playLaserPulseSound(now);
+
   const sx = p.x + p.w / 2;
   const sy = p.y + 4;
   const target = findLaserTarget(g, sx, sy);
@@ -691,7 +697,11 @@ function updateLaserWeapon(g: GameModel, p: Player, dt: number, now: number): vo
     const e = g.enemies[i];
     if (!laserHitsRect(g.laserVisual, e.x, e.y, e.w, e.h)) continue;
     e.hp -= damage;
-    if (e.hp <= 0) killEnemy(g, e, i, now);
+    if (e.hp <= 0) {
+      killEnemy(g, e, i, now);
+    } else {
+      playEnemyHitSound(now, false);
+    }
   }
 
   if (g.boss && g.boss.hp > 0) {
@@ -701,14 +711,27 @@ function updateLaserWeapon(g: GameModel, p: Player, dt: number, now: number): vo
       if (b.hp <= 0) {
         g.score += SCORE_BOSS;
         advanceStageAfterBoss(g, now);
+      } else {
+        playBossHitSound(now);
       }
     }
   }
 }
 
 let sfxAudioCtx: AudioContext | null = null;
+let lastSpreadShotSfxAt = 0;
+let lastLaserPulseSfxAt = 0;
+let lastEnemyHitSfxAt = 0;
+let lastBossHitSfxAt = 0;
 let lastPlayerHitSfxAt = 0;
-const PLAYER_HIT_SFX_COOLDOWN_MS = 140;
+let lastContactHitSfxAt = 0;
+
+const SPREAD_SHOT_SFX_COOLDOWN_MS = 145;
+const LASER_PULSE_SFX_COOLDOWN_MS = 78;
+const ENEMY_HIT_SFX_COOLDOWN_MS = 48;
+const BOSS_HIT_SFX_COOLDOWN_MS = 72;
+const PLAYER_HIT_SFX_COOLDOWN_MS = 130;
+const CONTACT_HIT_SFX_COOLDOWN_MS = 220;
 
 function getSfxContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -726,6 +749,17 @@ function resumeGameAudio(): void {
   if (ctx && ctx.state === "suspended") {
     void ctx.resume();
   }
+}
+
+function ensureSfxContext(): AudioContext | null {
+  const ctx = getSfxContext();
+  if (!ctx) return null;
+  if (ctx.state === "suspended") void ctx.resume();
+  return ctx;
+}
+
+function sfxCooldownOk(now: number, lastAt: number, cooldownMs: number): boolean {
+  return now - lastAt >= cooldownMs;
 }
 
 function playSfxTone(
@@ -752,80 +786,186 @@ function playSfxTone(
     );
   }
   gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.exponentialRampToValueAtTime(peak, start + 0.014);
+  gain.gain.exponentialRampToValueAtTime(peak, start + 0.012);
   gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
   osc.start(start);
   osc.stop(start + duration + 0.02);
 }
 
-function playPlayerHitSound(now: number): void {
-  if (now - lastPlayerHitSfxAt < PLAYER_HIT_SFX_COOLDOWN_MS) return;
-  lastPlayerHitSfxAt = now;
-
-  const ctx = getSfxContext();
-  if (!ctx) return;
-  if (ctx.state === "suspended") void ctx.resume();
-
-  const t0 = ctx.currentTime;
-  playSfxTone(ctx, t0, "sawtooth", 220, 72, 0.17, 0.085);
-  playSfxTone(ctx, t0, "square", 110, 55, 0.11, 0.038, 0.018);
-}
-
-function playBossDefeatSound(): void {
-  const ctx = getSfxContext();
-  if (!ctx) return;
-  if (ctx.state === "suspended") void ctx.resume();
-
-  const t0 = ctx.currentTime;
-  const notes: { f: number; d: number; dur: number; p: number }[] = [
-    { f: 523, d: 0, dur: 0.15, p: 0.09 },
-    { f: 659, d: 0.08, dur: 0.15, p: 0.09 },
-    { f: 784, d: 0.16, dur: 0.15, p: 0.095 },
-    { f: 1047, d: 0.26, dur: 0.45, p: 0.11 },
-  ];
+function playSfxArpeggio(
+  ctx: AudioContext,
+  t0: number,
+  type: OscillatorType,
+  notes: { f: number; d: number; dur: number; p: number }[]
+): void {
   for (const n of notes) {
-    playSfxTone(ctx, t0, "triangle", n.f, null, n.dur, n.p, n.d);
+    playSfxTone(ctx, t0, type, n.f, null, n.dur, n.p, n.d);
   }
 }
 
-function playItemPickupSound(type: ItemType): void {
-  const ctx = getSfxContext();
+function playGameStartSound(): void {
+  const ctx = ensureSfxContext();
   if (!ctx) return;
-  if (ctx.state === "suspended") void ctx.resume();
+  const t0 = ctx.currentTime;
+  playSfxTone(ctx, t0, "sine", 220, 880, 0.22, 0.09);
+  playSfxTone(ctx, t0, "triangle", 440, 1320, 0.18, 0.055, 0.04);
+}
+
+function playSpreadShotSound(now: number): void {
+  if (!sfxCooldownOk(now, lastSpreadShotSfxAt, SPREAD_SHOT_SFX_COOLDOWN_MS)) return;
+  lastSpreadShotSfxAt = now;
+
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  playSfxTone(ctx, t0, "sine", 1180, 620, 0.07, 0.055);
+  playSfxTone(ctx, t0, "triangle", 880, 440, 0.05, 0.038, 0.012);
+}
+
+function playLaserPulseSound(now: number): void {
+  if (!sfxCooldownOk(now, lastLaserPulseSfxAt, LASER_PULSE_SFX_COOLDOWN_MS)) return;
+  lastLaserPulseSfxAt = now;
+
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  playSfxTone(ctx, t0, "sawtooth", 280, 520, 0.09, 0.042);
+  playSfxTone(ctx, t0, "sine", 640, 960, 0.07, 0.028, 0.018);
+}
+
+function playEnemyHitSound(now: number, isBoss: boolean): void {
+  const cooldown = isBoss ? BOSS_HIT_SFX_COOLDOWN_MS : ENEMY_HIT_SFX_COOLDOWN_MS;
+  const lastAt = isBoss ? lastBossHitSfxAt : lastEnemyHitSfxAt;
+  if (!sfxCooldownOk(now, lastAt, cooldown)) return;
+  if (isBoss) lastBossHitSfxAt = now;
+  else lastEnemyHitSfxAt = now;
+
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  if (isBoss) {
+    playSfxTone(ctx, t0, "square", 140, 72, 0.09, 0.058);
+    playSfxTone(ctx, t0, "triangle", 95, 55, 0.07, 0.032, 0.02);
+  } else {
+    playSfxTone(ctx, t0, "triangle", 420, 180, 0.06, 0.062);
+    playSfxTone(ctx, t0, "sine", 660, 330, 0.045, 0.035, 0.008);
+  }
+}
+
+function playBossHitSound(now: number): void {
+  playEnemyHitSound(now, true);
+}
+
+function playEnemyKillSound(now: number): void {
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  playSfxTone(ctx, t0, "square", 720, 160, 0.11, 0.075);
+  playSfxTone(ctx, t0, "sine", 980, 420, 0.14, 0.05, 0.03);
+  playSfxTone(ctx, t0, "triangle", 1320, 880, 0.1, 0.038, 0.06);
+}
+
+function playPlayerHitSound(now: number): void {
+  if (!sfxCooldownOk(now, lastPlayerHitSfxAt, PLAYER_HIT_SFX_COOLDOWN_MS)) return;
+  lastPlayerHitSfxAt = now;
+
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  playSfxTone(ctx, t0, "sawtooth", 240, 78, 0.16, 0.088);
+  playSfxTone(ctx, t0, "square", 120, 58, 0.1, 0.04, 0.016);
+}
+
+function playPlayerContactSound(now: number): void {
+  if (!sfxCooldownOk(now, lastContactHitSfxAt, CONTACT_HIT_SFX_COOLDOWN_MS)) return;
+  lastContactHitSfxAt = now;
+
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  playSfxTone(ctx, t0, "sawtooth", 180, 95, 0.12, 0.055);
+}
+
+function playBossDefeatSound(): void {
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  playSfxArpeggio(ctx, t0, "triangle", [
+    { f: 523, d: 0, dur: 0.14, p: 0.095 },
+    { f: 659, d: 0.07, dur: 0.14, p: 0.095 },
+    { f: 784, d: 0.14, dur: 0.14, p: 0.1 },
+    { f: 1047, d: 0.22, dur: 0.48, p: 0.115 },
+  ]);
+  playSfxArpeggio(ctx, t0, "sine", [
+    { f: 1568, d: 0.32, dur: 0.35, p: 0.045 },
+    { f: 2093, d: 0.42, dur: 0.28, p: 0.038 },
+  ]);
+}
+
+function playBossSpawnSound(): void {
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  playSfxTone(ctx, t0, "sawtooth", 88, 44, 0.38, 0.1);
+  playSfxTone(ctx, t0, "square", 220, 165, 0.12, 0.055, 0.08);
+  playSfxTone(ctx, t0, "sine", 440, 330, 0.1, 0.05, 0.16);
+  playSfxTone(ctx, t0, "sine", 330, 440, 0.1, 0.05, 0.28);
+  playSfxTone(ctx, t0, "sine", 440, 330, 0.1, 0.05, 0.4);
+}
+
+function playBossShootSound(): void {
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  playSfxTone(ctx, t0, "sawtooth", 380, 95, 0.13, 0.048);
+  playSfxTone(ctx, t0, "triangle", 260, 120, 0.09, 0.032, 0.02);
+}
+
+function playLevelUpSound(): void {
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  playSfxArpeggio(ctx, t0, "sine", [
+    { f: 523, d: 0, dur: 0.1, p: 0.07 },
+    { f: 659, d: 0.06, dur: 0.1, p: 0.07 },
+    { f: 784, d: 0.12, dur: 0.1, p: 0.075 },
+    { f: 988, d: 0.18, dur: 0.12, p: 0.08 },
+    { f: 1175, d: 0.26, dur: 0.22, p: 0.085 },
+  ]);
+}
+
+function playGameOverSound(): void {
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  playSfxArpeggio(ctx, t0, "triangle", [
+    { f: 330, d: 0, dur: 0.22, p: 0.08 },
+    { f: 262, d: 0.16, dur: 0.24, p: 0.075 },
+    { f: 196, d: 0.34, dur: 0.38, p: 0.07 },
+  ]);
+}
+
+function playStageAdvanceSound(): void {
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime + 0.52;
+  playSfxTone(ctx, t0, "sine", 880, 1175, 0.22, 0.065);
+  playSfxTone(ctx, t0, "triangle", 1320, 1760, 0.18, 0.04, 0.08);
+}
+
+function playItemPickupSound(type: ItemType): void {
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
 
   const t0 = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-
   const peak = 0.11;
-  gain.gain.setValueAtTime(0.0001, t0);
 
   if (type === "heal") {
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(392, t0);
-    osc.frequency.exponentialRampToValueAtTime(784, t0 + 0.14);
-    gain.gain.exponentialRampToValueAtTime(peak, t0 + 0.025);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
-    osc.start(t0);
-    osc.stop(t0 + 0.28);
+    playSfxTone(ctx, t0, "sine", 392, 784, 0.26, peak);
   } else if (type === "missile") {
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(494, t0);
-    osc.frequency.exponentialRampToValueAtTime(988, t0 + 0.1);
-    gain.gain.exponentialRampToValueAtTime(peak * 0.9, t0 + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
-    osc.start(t0);
-    osc.stop(t0 + 0.2);
+    playSfxTone(ctx, t0, "triangle", 494, 988, 0.18, peak * 0.9);
   } else {
-    osc.type = "square";
-    osc.frequency.setValueAtTime(196, t0);
-    osc.frequency.exponentialRampToValueAtTime(523, t0 + 0.08);
-    gain.gain.exponentialRampToValueAtTime(peak * 0.65, t0 + 0.018);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
-    osc.start(t0);
-    osc.stop(t0 + 0.22);
+    playSfxTone(ctx, t0, "square", 196, 523, 0.2, peak * 0.65);
   }
 }
 
@@ -901,6 +1041,7 @@ function tryDropItem(g: GameModel, ex: number, ey: number): void {
 
 function advanceStageAfterBoss(g: GameModel, now: number): void {
   playBossDefeatSound();
+  playStageAdvanceSound();
   g.stage += 1;
   g.boss = null;
   g.bossSpawned = false;
@@ -931,6 +1072,7 @@ function applyLevelUps(g: GameModel, now: number): void {
   while (p.exp >= expToNextLevel(p.level)) {
     p.exp -= expToNextLevel(p.level);
     p.level += 1;
+    playLevelUpSound();
     p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.22));
 
     if (p.planeType === "spread") {
@@ -979,6 +1121,7 @@ function bossShoot(g: GameModel, b: Boss, px: number, py: number, now: number): 
     vy,
     armedAfter: now + ENEMY_BULLET_ARM_MS,
   });
+  playBossShootSound();
 }
 
 function drawSelectScreen(ctx: CanvasRenderingContext2D, now: number): void {
@@ -1550,7 +1693,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
     g.laserVisual = null;
     if (now - g.lastPlayerShot >= AUTO_FIRE_MS) {
       g.lastPlayerShot = now;
-      spawnSpreadBullets(g, p);
+      spawnSpreadBullets(g, p, now);
     }
   } else {
     g.missiles = [];
@@ -1593,7 +1736,11 @@ function updateGame(g: GameModel, dt: number, now: number): void {
       if (!rectsOverlap(m.x, m.y, m.w, m.h, e.x, e.y, e.w, e.h)) continue;
       e.hp -= m.damage;
       m.y = -9999;
-      if (e.hp <= 0) killEnemy(g, e, i, now);
+      if (e.hp <= 0) {
+        killEnemy(g, e, i, now);
+      } else {
+        playEnemyHitSound(now, false);
+      }
       continue outer;
     }
   }
@@ -1611,6 +1758,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
         advanceStageAfterBoss(g, now);
         return;
       }
+      playBossHitSound(now);
     }
     g.missiles = g.missiles.filter((m) => m.y > -500);
   }
@@ -1619,6 +1767,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
     for (const e of g.enemies) {
       if (!rectsOverlap(p.x, p.y, p.w, p.h, e.x, e.y, e.w, e.h)) continue;
       p.hp -= e.damage * dt;
+      playPlayerContactSound(now);
     }
   }
 
@@ -1643,11 +1792,13 @@ function updateGame(g: GameModel, dt: number, now: number): void {
     const b = g.boss;
     if (rectsOverlap(p.x, p.y, p.w, p.h, b.x, b.y, b.w, b.h)) {
       p.hp -= b.damage * BOSS_CONTACT_DPS_SCALE * dt;
+      playPlayerContactSound(now);
     }
   }
 
   if (p.hp <= 0) {
     p.hp = 0;
+    if (g.phase === "playing") playGameOverSound();
     g.phase = "gameover";
     g.laserVisual = null;
   }
