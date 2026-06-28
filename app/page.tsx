@@ -54,7 +54,8 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.7.0";
+const GAME_VERSION = "0.7.1";
+const HEAL_PULSE_MS = 750;
 
 type MovementInput = {
   left: boolean;
@@ -232,6 +233,13 @@ type LaserVisual = {
   drawThickness: number;
 };
 
+type HealPulse = {
+  fromHp: number;
+  toHp: number;
+  startAt: number;
+  until: number;
+};
+
 type GamePhase = "select" | "playing" | "gameover";
 
 type GameModel = {
@@ -258,6 +266,8 @@ type GameModel = {
   /** 이 시각까지 스테이지 시작 안내 오버레이 */
   stageIntroUntil: number;
   laserVisual: LaserVisual | null;
+  /** 회복 아이템 픽업 시 HP 바 애니메이션 */
+  healPulse: HealPulse | null;
 };
 
 // --- Pure helpers ---
@@ -379,6 +389,7 @@ function createGameModel(): GameModel {
     stage: 1,
     stageIntroUntil: 0,
     laserVisual: null,
+    healPulse: null,
   };
 }
 
@@ -415,6 +426,7 @@ function beginPlaying(g: GameModel, plane: PlaneType, now: number): void {
   g.stageIntroUntil = 0;
   g.playerInvulnerableUntil = 0;
   g.laserVisual = null;
+  g.healPulse = null;
   g.phase = "playing";
   g.nextEnemySpawnAt = now + 550;
   g.nextEnemySpawnDelay = randBetween(
@@ -980,20 +992,22 @@ function drawItem(ctx: CanvasRenderingContext2D, it: Item, now: number): void {
   ctx.restore();
 }
 
-function drawItemLegend(ctx: CanvasRenderingContext2D): void {
+function drawItemLegend(ctx: CanvasRenderingContext2D, planeType: PlaneType): void {
   const y = CANVAS_H - 26;
+  const missileLabel = planeType === "spread" ? "탄환↑" : "레이저↑";
   const entries: { color: string; label: string; sym: string }[] = [
-    { color: "#3ecf8e", label: "회복", sym: "+" },
-    { color: "#6cb6ff", label: "탄막", sym: "M" },
-    { color: "#f0b429", label: "공격", sym: "P" },
+    { color: "#3ecf8e", label: "HP회복", sym: "+" },
+    { color: "#6cb6ff", label: missileLabel, sym: "M" },
+    { color: "#f0b429", label: "공격↑", sym: "P" },
   ];
   let x = 14;
   ctx.font = "11px ui-monospace, monospace";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   for (const e of entries) {
+    const w = e.label.length > 4 ? 58 : 52;
     ctx.fillStyle = "rgba(0,0,0,0.45)";
-    ctx.fillRect(x - 2, y - 10, 52, 18);
+    ctx.fillRect(x - 2, y - 10, w, 18);
     ctx.fillStyle = e.color;
     ctx.beginPath();
     ctx.arc(x + 7, y - 1, 6, 0, Math.PI * 2);
@@ -1003,7 +1017,75 @@ function drawItemLegend(ctx: CanvasRenderingContext2D): void {
     ctx.fillText(e.sym, x + 5, y);
     ctx.font = "11px ui-monospace, monospace";
     ctx.fillText(e.label, x + 16, y - 1);
-    x += 58;
+    x += w + 4;
+  }
+}
+
+function drawPlayerHpBar(
+  ctx: CanvasRenderingContext2D,
+  p: Player,
+  healPulse: HealPulse | null,
+  now: number
+): void {
+  const barW = 220;
+  const barH = 14;
+  const x = 12;
+  const y = 12;
+
+  let displayHp = p.hp;
+  let pulsing = false;
+  let pulseScale = 1;
+
+  if (healPulse && now < healPulse.until) {
+    pulsing = true;
+    const dur = healPulse.until - healPulse.startAt;
+    const t = Math.min(1, (now - healPulse.startAt) / dur);
+    const eased = 1 - Math.pow(1 - t, 3);
+    displayHp = healPulse.fromHp + (healPulse.toHp - healPulse.fromHp) * eased;
+    pulseScale = 1 + Math.sin((now - healPulse.startAt) / 70) * 0.12;
+  } else if (healPulse && now >= healPulse.until) {
+    displayHp = p.hp;
+  }
+
+  const hpRatio = Math.max(0, Math.min(1, displayHp / p.maxHp));
+
+  if (pulsing) {
+    const glowA = 0.35 + Math.sin((now - (healPulse!.startAt)) / 90) * 0.2;
+    ctx.save();
+    ctx.shadowColor = "#4ade80";
+    ctx.shadowBlur = 14 * pulseScale;
+    ctx.strokeStyle = `rgba(74, 222, 128, ${glowA})`;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x - 2, y - 2, barW + 4, barH + 4);
+    ctx.restore();
+  }
+
+  ctx.fillStyle = "#1f2937";
+  ctx.fillRect(x, y, barW, barH);
+
+  if (pulsing && healPulse) {
+    const oldRatio = Math.max(0, Math.min(1, healPulse.fromHp / p.maxHp));
+    ctx.fillStyle = "rgba(34, 197, 94, 0.25)";
+    ctx.fillRect(x, y, barW * oldRatio, barH);
+  }
+
+  ctx.fillStyle = pulsing ? "#4ade80" : hpRatio > 0.35 ? "#22c55e" : "#ef4444";
+  ctx.fillRect(x, y, barW * hpRatio, barH);
+
+  ctx.strokeStyle = pulsing ? "#bbf7d0" : "#9ca3af";
+  ctx.lineWidth = pulsing ? 2 : 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, barW - 1, barH - 1);
+
+  ctx.fillStyle = pulsing ? "#ecfdf5" : "#e5e7eb";
+  ctx.font = pulsing ? "bold 12px ui-monospace, monospace" : "12px ui-monospace, monospace";
+  const hpText = `HP ${Math.max(0, Math.ceil(displayHp))}/${p.maxHp}`;
+  ctx.fillText(hpText, 18, 23);
+  if (pulsing) {
+    ctx.fillStyle = "#86efac";
+    ctx.font = "10px ui-monospace, monospace";
+    ctx.textAlign = "right";
+    ctx.fillText("+회복", x + barW, 23);
+    ctx.textAlign = "left";
   }
 }
 
@@ -1053,6 +1135,10 @@ function drawGame(
   ranking: number[] | null,
   now: number
 ): void {
+  if (g.healPulse && now >= g.healPulse.until) {
+    g.healPulse = null;
+  }
+
   if (g.phase === "select") {
     drawSelectScreen(ctx, now);
     return;
@@ -1118,18 +1204,9 @@ function drawGame(
   ctx.strokeStyle = "#e0f2fe";
   ctx.stroke();
 
-  const barW = 220;
-  const hpRatio = p.hp / p.maxHp;
-  ctx.fillStyle = "#1f2937";
-  ctx.fillRect(12, 12, barW, 14);
-  ctx.fillStyle = hpRatio > 0.35 ? "#22c55e" : "#ef4444";
-  ctx.fillRect(12, 12, barW * hpRatio, 14);
-  ctx.strokeStyle = "#9ca3af";
-  ctx.strokeRect(12, 12, barW, 14);
-  ctx.fillStyle = "#e5e7eb";
-  ctx.font = "12px ui-monospace, monospace";
-  ctx.fillText(`HP ${Math.max(0, Math.ceil(p.hp))}/${p.maxHp}`, 18, 23);
+  drawPlayerHpBar(ctx, p, g.healPulse, now);
 
+  const barW = 220;
   const need = expToNextLevel(p.level);
   const expRatio = Math.min(1, p.exp / need);
   ctx.fillStyle = "#1f2937";
@@ -1139,6 +1216,7 @@ function drawGame(
   ctx.strokeStyle = "#9ca3af";
   ctx.strokeRect(12, 32, barW, 12);
   ctx.fillStyle = "#e5e7eb";
+  ctx.font = "12px ui-monospace, monospace";
   ctx.fillText(`EXP ${Math.floor(p.exp)}/${need}`, 18, 41);
 
   const planeLabel = p.planeType === "spread" ? "Spr" : "Lsr";
@@ -1160,7 +1238,7 @@ function drawGame(
   ctx.fillText(`Sky Strike · v${GAME_VERSION}`, CANVAS_W / 2, CANVAS_H - 8);
   ctx.textAlign = "left";
 
-  drawItemLegend(ctx);
+  drawItemLegend(ctx, p.planeType);
 
   if (g.boss && g.boss.hp > 0) {
     drawBossHealthBar(ctx, g.boss, g.stage);
@@ -1326,7 +1404,14 @@ function updateGame(g: GameModel, dt: number, now: number): void {
     const it = g.items[i];
     if (!rectsOverlap(p.x, p.y, p.w, p.h, it.x, it.y, it.w, it.h)) continue;
     if (it.type === "heal") {
+      const prevHp = p.hp;
       p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.35));
+      g.healPulse = {
+        fromHp: prevHp,
+        toHp: p.hp,
+        startAt: now,
+        until: now + HEAL_PULSE_MS,
+      };
     } else if (it.type === "missile") {
       if (p.planeType === "spread") {
         p.missileCount += 4;
