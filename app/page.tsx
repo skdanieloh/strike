@@ -36,6 +36,12 @@ const DROP_CHANCE = 0.3;
 const EXP_PER_KILL = 28;
 const NORMAL_ENEMY_MAX_HP = 50;
 const BOSS_HP_MULT = 10;
+/** 보스 전용 추가 체력 배율 (스테이지·보스 배율과 별도) */
+const BOSS_HP_TANK_BASE = 32000;
+/** W레벨 이상부터 총알·레이저 시각(두께·각도) 고정 — 실제 파워는 계속 상승 */
+const VISUAL_WEAPON_LEVEL_CAP = 8;
+const VISUAL_SPREAD_HALF_CAP = 0.52;
+const VISUAL_SPREAD_COUNT_CAP = 11;
 const SCORE_ENEMY = 10;
 const SCORE_BOSS = 500;
 const RANKING_KEY = "strike-plane-top5";
@@ -48,7 +54,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.6.3";
+const GAME_VERSION = "0.7.0";
 
 type MovementInput = {
   left: boolean;
@@ -220,7 +226,10 @@ type LaserVisual = {
   cy: number;
   ex: number;
   ey: number;
+  /** 충돌·피해 판정 두께 */
   thickness: number;
+  /** 화면에 그리는 두께 (상한 적용) */
+  drawThickness: number;
 };
 
 type GamePhase = "select" | "playing" | "gameover";
@@ -293,6 +302,16 @@ function getStageDifficulty(stage: number): number {
 /** 보스 HP·공격: 스테이지마다 2.25배 (2x+) */
 function getBossStageMult(stage: number): number {
   return Math.pow(2.25, Math.max(0, stage - 1));
+}
+
+function calcBossMaxHp(stage: number): number {
+  const stageMult = getStageDifficulty(stage);
+  const bossMult = getBossStageMult(stage);
+  return Math.round(BOSS_HP_TANK_BASE * bossMult * stageMult);
+}
+
+function visualWeaponLevel(weaponLevel: number): number {
+  return Math.min(weaponLevel, VISUAL_WEAPON_LEVEL_CAP);
 }
 
 function saveRankingScore(score: number): number[] {
@@ -471,9 +490,9 @@ function spawnEnemy(g: GameModel, playerX: number): void {
 }
 
 function spawnBoss(g: GameModel, now: number): void {
+  const maxHp = calcBossMaxHp(g.stage);
   const stageMult = getStageDifficulty(g.stage);
   const bossMult = getBossStageMult(g.stage);
-  const maxHp = Math.round(NORMAL_ENEMY_MAX_HP * BOSS_HP_MULT * stageMult * bossMult);
   const dmg = Math.round(55 * stageMult * bossMult);
   g.enemies = [];
   g.boss = {
@@ -499,8 +518,12 @@ function spawnSpreadBullets(g: GameModel, p: Player): void {
     MAX_SPREAD_PER_SHOT
   );
   if (g.missiles.length >= MAX_MISSILES - count) return;
-  const halfSpread =
-    0.22 + p.weaponLevel * 0.065 + Math.max(0, count - 3) * 0.018;
+  const visWl = visualWeaponLevel(p.weaponLevel);
+  const visCount = Math.min(count, VISUAL_SPREAD_COUNT_CAP);
+  const halfSpread = Math.min(
+    VISUAL_SPREAD_HALF_CAP,
+    0.22 + visWl * 0.065 + Math.max(0, visCount - 3) * 0.016
+  );
   const baseAngle = -Math.PI / 2;
   const speed = MISSILE_SPEED * (1 + p.weaponLevel * 0.05);
   const baseX = p.x + p.w / 2 - MISSILE_W / 2;
@@ -621,10 +644,11 @@ function updateLaserWeapon(g: GameModel, p: Player, dt: number, now: number): vo
   const sx = p.x + p.w / 2;
   const sy = p.y + 4;
   const target = findLaserTarget(g, sx, sy);
-  const sway = Math.sin(now / 280) * (18 + p.weaponLevel * 2);
+  const sway = Math.sin(now / 280) * (18 + visualWeaponLevel(p.weaponLevel) * 2);
   const cx = sx + (target.x - sx) * 0.42 + sway;
   const cy = sy - Math.max(120, (sy - target.y) * 0.55);
-  const thickness = 4 + p.weaponLevel * 2.4;
+  const hitThickness = 4 + p.weaponLevel * 2.4;
+  const drawThickness = 4 + visualWeaponLevel(p.weaponLevel) * 2.4;
   const dps = p.attack * (2.4 + p.weaponLevel * 0.58);
   const damage = dps * dt;
 
@@ -635,7 +659,8 @@ function updateLaserWeapon(g: GameModel, p: Player, dt: number, now: number): vo
     cy,
     ex: target.x,
     ey: target.y,
-    thickness,
+    thickness: hitThickness,
+    drawThickness,
   };
 
   for (let i = g.enemies.length - 1; i >= 0; i--) {
@@ -843,19 +868,20 @@ function drawSelectScreen(ctx: CanvasRenderingContext2D, now: number): void {
 }
 
 function drawLaserBeam(ctx: CanvasRenderingContext2D, laser: LaserVisual): void {
+  const w = laser.drawThickness;
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
   ctx.strokeStyle = "rgba(192, 132, 252, 0.25)";
-  ctx.lineWidth = laser.thickness * 2.4;
+  ctx.lineWidth = w * 2.4;
   ctx.beginPath();
   ctx.moveTo(laser.sx, laser.sy);
   ctx.quadraticCurveTo(laser.cx, laser.cy, laser.ex, laser.ey);
   ctx.stroke();
 
   ctx.strokeStyle = "rgba(224, 231, 255, 0.85)";
-  ctx.lineWidth = laser.thickness;
+  ctx.lineWidth = w;
   ctx.shadowColor = "#c084fc";
   ctx.shadowBlur = 14;
   ctx.beginPath();
@@ -864,6 +890,161 @@ function drawLaserBeam(ctx: CanvasRenderingContext2D, laser: LaserVisual): void 
   ctx.stroke();
 
   ctx.restore();
+}
+
+function drawItem(ctx: CanvasRenderingContext2D, it: Item, now: number): void {
+  const cx = it.x + it.w / 2;
+  const cy = it.y + it.h / 2;
+  const pulse = 1 + Math.sin(now / 220 + it.id) * 0.08;
+  const r = (it.w / 2) * pulse;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  if (it.type === "heal") {
+    ctx.fillStyle = "rgba(62, 207, 142, 0.35)";
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#3ecf8e";
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ecfdf5";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 16px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("+", 0, 1);
+  } else if (it.type === "missile") {
+    ctx.fillStyle = "rgba(108, 182, 255, 0.35)";
+    ctx.beginPath();
+    ctx.moveTo(0, -r - 5);
+    ctx.lineTo(r + 5, 0);
+    ctx.lineTo(0, r + 5);
+    ctx.lineTo(-r - 5, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#6cb6ff";
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r, r * 0.55);
+    ctx.lineTo(-r, r * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#e0f2fe";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 11px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("M", 0, r * 0.1);
+  } else {
+    ctx.fillStyle = "rgba(240, 180, 41, 0.35)";
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = (Math.PI / 4) * i - Math.PI / 2;
+      const rad = i % 2 === 0 ? r + 5 : r * 0.45;
+      const px = Math.cos(a) * rad;
+      const py = Math.sin(a) * rad;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#f0b429";
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = (Math.PI / 4) * i - Math.PI / 2;
+      const rad = i % 2 === 0 ? r : r * 0.45;
+      const px = Math.cos(a) * rad;
+      const py = Math.sin(a) * rad;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#fef3c7";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#1e293b";
+    ctx.font = "bold 12px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("P", 0, 1);
+  }
+
+  ctx.restore();
+}
+
+function drawItemLegend(ctx: CanvasRenderingContext2D): void {
+  const y = CANVAS_H - 26;
+  const entries: { color: string; label: string; sym: string }[] = [
+    { color: "#3ecf8e", label: "회복", sym: "+" },
+    { color: "#6cb6ff", label: "탄막", sym: "M" },
+    { color: "#f0b429", label: "공격", sym: "P" },
+  ];
+  let x = 14;
+  ctx.font = "11px ui-monospace, monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  for (const e of entries) {
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fillRect(x - 2, y - 10, 52, 18);
+    ctx.fillStyle = e.color;
+    ctx.beginPath();
+    ctx.arc(x + 7, y - 1, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#f1f5f9";
+    ctx.font = "bold 9px ui-monospace, monospace";
+    ctx.fillText(e.sym, x + 5, y);
+    ctx.font = "11px ui-monospace, monospace";
+    ctx.fillText(e.label, x + 16, y - 1);
+    x += 58;
+  }
+}
+
+function drawBossHealthBar(
+  ctx: CanvasRenderingContext2D,
+  b: Boss,
+  stage: number
+): void {
+  const barW = CANVAS_W - 48;
+  const barH = 20;
+  const x = 24;
+  const y = 86;
+  const ratio = Math.max(0, Math.min(1, b.hp / b.maxHp));
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
+  ctx.fillRect(x - 6, y - 24, barW + 12, barH + 30);
+
+  ctx.fillStyle = "#fca5a5";
+  ctx.font = "bold 14px ui-sans-serif, system-ui";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(`◆ BOSS  STAGE ${stage}`, x, y - 8);
+
+  ctx.fillStyle = "#1f2937";
+  ctx.fillRect(x, y, barW, barH);
+  const grad = ratio > 0.45 ? "#ef4444" : ratio > 0.2 ? "#dc2626" : "#991b1b";
+  ctx.fillStyle = grad;
+  ctx.fillRect(x, y, barW * ratio, barH);
+  ctx.strokeStyle = "#f8fafc";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 0.5, y + 0.5, barW - 1, barH - 1);
+
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "12px ui-monospace, monospace";
+  ctx.textAlign = "right";
+  ctx.fillText(
+    `${Math.max(0, Math.ceil(b.hp)).toLocaleString()} / ${b.maxHp.toLocaleString()}`,
+    x + barW,
+    y - 8
+  );
+  ctx.textAlign = "left";
 }
 
 function drawGame(
@@ -890,13 +1071,7 @@ function drawGame(
   const p = g.player;
 
   for (const it of g.items) {
-    if (it.type === "heal") ctx.fillStyle = "#3ecf8e";
-    else if (it.type === "missile") ctx.fillStyle = "#6cb6ff";
-    else ctx.fillStyle = "#f0b429";
-    ctx.fillRect(it.x, it.y, it.w, it.h);
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(it.x + 0.5, it.y + 0.5, it.w - 1, it.h - 1);
+    drawItem(ctx, it, now);
   }
 
   for (const e of g.enemies) {
@@ -906,26 +1081,26 @@ function drawGame(
     ctx.fillRect(e.x + 6, e.y + 6, e.w - 12, 8);
   }
 
-  if (g.boss) {
+  if (g.boss && g.boss.hp > 0) {
     const b = g.boss;
     ctx.fillStyle = "#7c3aed";
     ctx.fillRect(b.x, b.y, b.w, b.h);
     ctx.fillStyle = "#c4b5fd";
     ctx.fillRect(b.x + 20, b.y + 16, b.w - 40, 24);
-    const bw = (b.hp / b.maxHp) * (b.w - 8);
-    ctx.fillStyle = "#22c55e";
-    ctx.fillRect(b.x + 4, b.y - 10, bw, 6);
-    ctx.strokeStyle = "#fff";
-    ctx.strokeRect(b.x + 4, b.y - 10, b.w - 8, 6);
   }
 
   if (g.laserVisual) {
     drawLaserBeam(ctx, g.laserVisual);
   }
 
+  const visWl = visualWeaponLevel(p.weaponLevel);
+  const bulletW = MISSILE_W + visWl * 0.35;
+  const bulletH = MISSILE_H + visWl * 0.55;
   ctx.fillStyle = "#93c5fd";
   for (const m of g.missiles) {
-    ctx.fillRect(m.x, m.y, m.w, m.h);
+    const bx = m.x + m.w / 2 - bulletW / 2;
+    const by = m.y + m.h / 2 - bulletH / 2;
+    ctx.fillRect(bx, by, bulletW, bulletH);
   }
 
   ctx.fillStyle = "#fb923c";
@@ -984,6 +1159,12 @@ function drawGame(
   ctx.textAlign = "center";
   ctx.fillText(`Sky Strike · v${GAME_VERSION}`, CANVAS_W / 2, CANVAS_H - 8);
   ctx.textAlign = "left";
+
+  drawItemLegend(ctx);
+
+  if (g.boss && g.boss.hp > 0) {
+    drawBossHealthBar(ctx, g.boss, g.stage);
+  }
 
   if (g.phase === "playing" && now < g.stageIntroUntil) {
     ctx.fillStyle = "rgba(0,0,0,0.45)";
