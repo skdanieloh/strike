@@ -22,7 +22,7 @@ const CANVAS_H = 1280;
 const AUTO_FIRE_MS = 165;
 const ENEMY_SPAWN_MIN_MS = 520;
 const ENEMY_SPAWN_MAX_MS = 1050;
-const PLAYER_SPEED_PX = 440;
+const PLAYER_SPEED_PX = 560;
 /** 터치 드래그: dead zone 안이면 정지, ramp 구간에서 0→1 가속 */
 const TOUCH_DEAD_ZONE = 36;
 const TOUCH_RAMP_DIST = 100;
@@ -64,7 +64,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.11.6";
+const GAME_VERSION = "0.11.7";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 const MOBILE_PICKUP_TOAST_MS = 1300;
@@ -78,6 +78,10 @@ const BOMB_DROP_FIRST_MIN_MS = 3500;
 const BOMB_DROP_FIRST_MAX_MS = 7500;
 const BOMB_COOLDOWN_MS = 520;
 const BOMB_FLASH_MS = 460;
+const STAGE_LIFE_DROP_CHANCE = 0.1;
+const LIFE_DROP_FIRST_MIN_MS = 9000;
+const LIFE_DROP_FIRST_MAX_MS = 20000;
+const RESPAWN_INVULN_MS = 2200;
 const BOSS_SPAWN_Y_DESKTOP = 138;
 const BOSS_SPAWN_Y_MOBILE = 152;
 
@@ -265,7 +269,7 @@ type Boss = {
   lastShot: number;
 };
 
-type ItemType = "heal" | "missile" | "power" | "bomb";
+type ItemType = "heal" | "missile" | "power" | "bomb" | "life";
 
 type Item = {
   id: number;
@@ -369,6 +373,14 @@ type GameModel = {
   stageBombsLeft: number;
   /** 다음 폭탄 아이템 드랍 시각(ms) */
   nextBombDropAt: number;
+  /** 남은 추가 생명 (0이면 HP 0 시 게임 오버) */
+  extraLives: number;
+  /** 이번 스테이지에 생명 아이템 드랍 예정 여부 (10% 확률) */
+  stageLifeWillDrop: boolean;
+  /** 이번 스테이지 생명 아이템 이미 드랍했는지 */
+  stageLifeDropped: boolean;
+  /** 생명 아이템 드랍 예정 시각(ms) */
+  nextLifeDropAt: number;
 };
 
 // --- Pure helpers ---
@@ -530,6 +542,10 @@ function createGameModel(): GameModel {
     bombFlashUntil: 0,
     stageBombsLeft: 0,
     nextBombDropAt: Number.POSITIVE_INFINITY,
+    extraLives: 0,
+    stageLifeWillDrop: false,
+    stageLifeDropped: false,
+    nextLifeDropAt: Number.POSITIVE_INFINITY,
   };
 }
 
@@ -584,7 +600,9 @@ function beginPlaying(g: GameModel, plane: PlaneType, now: number): void {
   g.bombs = STARTING_BOMBS;
   g.bombCooldownUntil = 0;
   g.bombFlashUntil = 0;
+  g.extraLives = 0;
   initStageBombDrops(g, now);
+  initStageLifeDrop(g, now);
 }
 
 function trySelectPlane(g: GameModel, x: number, y: number, now: number): boolean {
@@ -691,6 +709,54 @@ function updateStageBombDrops(g: GameModel, now: number): void {
   spawnBombItem(g);
   g.stageBombsLeft -= 1;
   scheduleNextBombDrop(g, now);
+}
+
+function initStageLifeDrop(g: GameModel, now: number): void {
+  g.stageLifeWillDrop = Math.random() < STAGE_LIFE_DROP_CHANCE;
+  g.stageLifeDropped = false;
+  g.nextLifeDropAt = g.stageLifeWillDrop
+    ? now + randBetween(LIFE_DROP_FIRST_MIN_MS, LIFE_DROP_FIRST_MAX_MS)
+    : Number.POSITIVE_INFINITY;
+}
+
+function spawnLifeItem(g: GameModel): void {
+  if (g.items.length >= MAX_ITEMS) return;
+  g.items.push({
+    id: nextId(g),
+    x: randBetween(20, CANVAS_W - ITEM_W - 20),
+    y: -ITEM_H,
+    w: ITEM_W,
+    h: ITEM_H,
+    type: "life",
+    vy: ITEM_FALL_SPEED * 0.92,
+  });
+}
+
+function updateStageLifeDrop(g: GameModel, now: number): void {
+  if (g.phase !== "playing" || !g.stageLifeWillDrop || g.stageLifeDropped) return;
+  if (now < g.nextLifeDropAt) return;
+  spawnLifeItem(g);
+  g.stageLifeDropped = true;
+}
+
+function tryConsumeExtraLife(g: GameModel, now: number): boolean {
+  if (g.extraLives <= 0) return false;
+
+  g.extraLives -= 1;
+  const p = g.player;
+  p.hp = p.maxHp;
+  g.enemyBullets = [];
+  g.missiles = [];
+  g.laserVisual = null;
+  g.playerInvulnerableUntil = now + RESPAWN_INVULN_MS;
+  g.pickupToast = {
+    text: "부활!",
+    color: "#f472b6",
+    startAt: now,
+    until: now + (g.hudMobile ? MOBILE_PICKUP_TOAST_MS : PICKUP_TOAST_MS),
+  };
+  playItemPickupSound("life");
+  return true;
 }
 
 function calcBossSpawnY(hudMobile: boolean): number {
@@ -1159,6 +1225,9 @@ function playItemPickupSound(type: ItemType): void {
   } else if (type === "bomb") {
     playSfxTone(ctx, t0, "sawtooth", 120, 240, 0.16, peak * 0.85);
     playSfxTone(ctx, t0, "square", 180, 360, 0.12, peak * 0.55, 0.04);
+  } else if (type === "life") {
+    playSfxTone(ctx, t0, "sine", 440, 880, 0.24, peak);
+    playSfxTone(ctx, t0, "triangle", 660, 1320, 0.16, peak * 0.55, 0.05);
   } else {
     playSfxTone(ctx, t0, "square", 196, 523, 0.2, peak * 0.65);
   }
@@ -1170,6 +1239,7 @@ function pickupToastMeta(
 ): { text: string; color: string } {
   if (type === "heal") return { text: "HP 회복!", color: "#4ade80" };
   if (type === "bomb") return { text: "폭탄 +1!", color: "#fb923c" };
+  if (type === "life") return { text: "생명 +1!", color: "#f472b6" };
   if (type === "power") return { text: "공격력 UP!", color: "#fbbf24" };
   if (planeType === "spread") return { text: "탄환 UP!", color: "#60a5fa" };
   return { text: "레이저 UP!", color: "#c084fc" };
@@ -1212,6 +1282,8 @@ function applyItemPickup(g: GameModel, p: Player, type: ItemType, now: number): 
     }
   } else if (type === "bomb") {
     g.bombs += 1;
+  } else if (type === "life") {
+    g.extraLives += 1;
   } else {
     p.attack += 7;
   }
@@ -1264,6 +1336,7 @@ function advanceStageAfterBoss(g: GameModel, now: number): void {
   g.playerInvulnerableUntil = Math.max(g.playerInvulnerableUntil, now + 1600);
   g.phase = "playing";
   initStageBombDrops(g, now);
+  initStageLifeDrop(g, now);
 }
 
 function applyLevelUps(g: GameModel, now: number): void {
@@ -1685,6 +1758,25 @@ function drawItem(ctx: CanvasRenderingContext2D, it: Item, now: number): void {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("B", 0, 1);
+  } else if (it.type === "life") {
+    ctx.fillStyle = "rgba(244, 114, 182, 0.35)";
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#f472b6";
+    ctx.beginPath();
+    ctx.moveTo(0, r * 0.35);
+    ctx.bezierCurveTo(r * 0.95, -r * 0.45, r * 1.05, r * 0.55, 0, r * 1.05);
+    ctx.bezierCurveTo(-r * 1.05, r * 0.55, -r * 0.95, -r * 0.45, 0, r * 0.35);
+    ctx.fill();
+    ctx.strokeStyle = "#fce7f3";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 11px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("+1", 0, r * 0.42);
   } else {
     ctx.fillStyle = "rgba(240, 180, 41, 0.35)";
     ctx.beginPath();
@@ -1925,6 +2017,7 @@ function drawItemLegend(
     { color: "#3ecf8e", label: "HP회복", sym: "+" },
     { color: "#6cb6ff", label: missileLabel, sym: "M" },
     { color: "#f0b429", label: "공격↑", sym: "P" },
+    { color: "#f472b6", label: "생명+1", sym: "♥" },
   ];
 
   const y = CANVAS_H - 26;
@@ -2310,7 +2403,8 @@ function drawGame(
 
   if (layout.mobile) {
     ctx.font = layout.fontStat;
-    const row1 = `St.${g.stage} · Lv.${p.level} · ${planeLabel} W${p.weaponLevel} · ${weaponStat}`;
+    const lifePart = g.extraLives > 0 ? ` · ♥${g.extraLives}` : "";
+    const row1 = `St.${g.stage} · Lv.${p.level} · ${planeLabel} W${p.weaponLevel} · ${weaponStat}${lifePart}`;
     drawOutlinedText(ctx, row1, layout.marginX, layout.statY1, "#cbd5e1", "rgba(0,0,0,0.4)", 2);
   } else {
     ctx.fillStyle = "#f9fafb";
@@ -2319,6 +2413,10 @@ function drawGame(
     ctx.fillText(`Lv ${p.level}`, 56, layout.statY1);
     ctx.fillText(`${planeLabel} W${p.weaponLevel}`, 108, layout.statY1);
     ctx.fillText(`Score ${g.score}`, 220, layout.statY1);
+    if (g.extraLives > 0) {
+      ctx.fillStyle = "#f472b6";
+      ctx.fillText(`Life ${g.extraLives}`, 320, layout.statY1);
+    }
     if (p.planeType === "spread") {
       ctx.fillText(`Shots ${Math.floor(p.missileCount)}`, 360, layout.statY1);
     } else {
@@ -2392,6 +2490,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
   if (g.phase !== "playing") return;
 
   updateStageBombDrops(g, now);
+  updateStageLifeDrop(g, now);
 
   const p = g.player;
   const canTakeDamage = now >= g.playerInvulnerableUntil;
@@ -2536,6 +2635,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
 
   if (p.hp <= 0) {
     p.hp = 0;
+    if (tryConsumeExtraLife(g, now)) return;
     if (g.phase === "playing") playGameOverSound();
     g.phase = "gameover";
     g.laserVisual = null;

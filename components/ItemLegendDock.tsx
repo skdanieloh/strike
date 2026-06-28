@@ -30,6 +30,7 @@ export function ItemLegendDock({ plane }: ItemLegendDockProps) {
     { color: "#f0b429", sym: "P", label: "공격↑" },
     { color: "#6cb6ff", sym: "M", label: missileLabel },
     { color: "#fb923c", sym: "B", label: "폭탄↓" },
+    { color: "#f472b6", sym: "♥", label: "생명+1" },
   ];
 
   return (
