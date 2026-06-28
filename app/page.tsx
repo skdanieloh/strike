@@ -48,7 +48,7 @@ const NORMAL_ENEMY_MAX_HP = 50;
 const BOSS_HP_MULT = 10;
 /** 보스 전용 추가 체력 배율 (스테이지·보스 배율과 별도) */
 const BOSS_HP_TANK_BASE = 32000;
-/** W레벨 이상부터 총알·레이저 시각(두께·각도) 고정 — 실제 파워는 계속 상승 */
+/** W레벨 이상부터 부채꼴 각도·탄수 시각 고정 — 두께는 overflowVisualProgress 로 계속 성장 */
 const VISUAL_WEAPON_LEVEL_CAP = 8;
 const VISUAL_SPREAD_HALF_CAP = 0.52;
 const VISUAL_SPREAD_COUNT_CAP = 11;
@@ -64,7 +64,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.11.5";
+const GAME_VERSION = "0.11.6";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 const MOBILE_PICKUP_TOAST_MS = 1300;
@@ -423,6 +423,36 @@ function calcBossMaxHp(stage: number): number {
 
 function visualWeaponLevel(weaponLevel: number): number {
   return Math.min(weaponLevel, VISUAL_WEAPON_LEVEL_CAP);
+}
+
+/** 캡 이후 W레벨 — 캡 구간만큼 더 올리면 시각 두께가 최대치의 2배까지 성장 */
+function overflowVisualProgress(weaponLevel: number): number {
+  if (weaponLevel <= VISUAL_WEAPON_LEVEL_CAP) return 0;
+  const overflow = weaponLevel - VISUAL_WEAPON_LEVEL_CAP;
+  return Math.min(overflow / VISUAL_WEAPON_LEVEL_CAP, 1);
+}
+
+function visualLaserDrawThickness(weaponLevel: number): number {
+  const capThickness = 4 + VISUAL_WEAPON_LEVEL_CAP * 2.4;
+  if (weaponLevel <= VISUAL_WEAPON_LEVEL_CAP) {
+    return 4 + weaponLevel * 2.4;
+  }
+  return capThickness * (1 + overflowVisualProgress(weaponLevel));
+}
+
+function visualSpreadBulletDimensions(weaponLevel: number): { w: number; h: number } {
+  const capWl = VISUAL_WEAPON_LEVEL_CAP;
+  const capW = MISSILE_W + capWl * 0.35;
+  const capH = MISSILE_H + capWl * 0.55;
+  if (weaponLevel <= capWl) {
+    const visWl = weaponLevel;
+    return {
+      w: MISSILE_W + visWl * 0.35,
+      h: MISSILE_H + visWl * 0.55,
+    };
+  }
+  const scale = 1 + overflowVisualProgress(weaponLevel);
+  return { w: capW * scale, h: capH * scale };
 }
 
 function saveRankingScore(score: number): number[] {
@@ -831,7 +861,7 @@ function updateLaserWeapon(g: GameModel, p: Player, dt: number, now: number): vo
   const cx = sx + (target.x - sx) * 0.42 + sway;
   const cy = sy - Math.max(120, (sy - target.y) * 0.55);
   const hitThickness = 4 + p.weaponLevel * 2.4;
-  const drawThickness = 4 + visualWeaponLevel(p.weaponLevel) * 2.4;
+  const drawThickness = visualLaserDrawThickness(p.weaponLevel);
   const dps = p.attack * (2.4 + p.weaponLevel * 0.58);
   const damage = dps * dt;
 
@@ -2201,9 +2231,7 @@ function drawGame(
     drawLaserBeam(ctx, g.laserVisual);
   }
 
-  const visWl = visualWeaponLevel(p.weaponLevel);
-  const bulletW = MISSILE_W + visWl * 0.35;
-  const bulletH = MISSILE_H + visWl * 0.55;
+  const { w: bulletW, h: bulletH } = visualSpreadBulletDimensions(p.weaponLevel);
   ctx.fillStyle = "#93c5fd";
   for (const m of g.missiles) {
     const bx = m.x + m.w / 2 - bulletW / 2;
