@@ -13,17 +13,22 @@ const SRC = process.argv[2] ? path.resolve(process.argv[2]) : defaultSrc;
 
 async function composeIcon(size) {
   const radius = Math.round(size * 0.22);
-  const pad = Math.round(size * 0.05);
-  const photoW = size - pad * 2;
+  const zoom = 1.38;
 
   const planePhoto = await sharp(SRC)
-    .extract({ left: 0, top: 0, width: 399, height: 330 })
+    .extract({ left: 20, top: 0, width: 360, height: 330 })
     .modulate({ brightness: 1.06, saturation: 1.1 })
     .sharpen({ sigma: 0.6 })
-    .toBuffer();
-
-  const resized = await sharp(planePhoto)
-    .resize(photoW, Math.round(photoW * 1.05), { fit: "cover", position: "top" })
+    .resize(Math.round(size * zoom), Math.round(size * zoom), {
+      fit: "cover",
+      position: "centre",
+    })
+    .extract({
+      left: Math.round((size * zoom - size) / 2),
+      top: Math.round((size * zoom - size) / 2 - size * 0.04),
+      width: size,
+      height: size,
+    })
     .toBuffer();
 
   const frame = Buffer.from(
@@ -47,10 +52,9 @@ async function composeIcon(size) {
   );
 
   const base = await sharp(frame).png().toBuffer();
-  const top = Math.round(pad * 0.35);
 
   const withPhoto = await sharp(base)
-    .composite([{ input: resized, top, left: pad, blend: "over" }])
+    .composite([{ input: planePhoto, blend: "over" }])
     .png()
     .toBuffer();
 
@@ -58,9 +62,9 @@ async function composeIcon(size) {
     `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <clipPath id="round"><rect width="${size}" height="${size}" rx="${radius}"/></clipPath>
-        <radialGradient id="v" cx="50%" cy="44%" r="66%">
-          <stop offset="52%" stop-color="rgba(0,0,0,0)"/>
-          <stop offset="100%" stop-color="rgba(10,16,28,0.9)"/>
+        <radialGradient id="v" cx="50%" cy="44%" r="78%">
+          <stop offset="68%" stop-color="rgba(0,0,0,0)"/>
+          <stop offset="100%" stop-color="rgba(10,16,28,0.55)"/>
         </radialGradient>
       </defs>
       <g clip-path="url(#round)"><rect width="${size}" height="${size}" fill="url(#v)"/></g>
