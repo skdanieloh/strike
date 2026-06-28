@@ -100,11 +100,11 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
           </li>
           <li>
             <span className="lobby-screen__control-key">모바일</span>
-            하단 조이스틱
+            하단 조이스틱 · 💣 폭탄(×100 ATK)
           </li>
           <li>
             <span className="lobby-screen__control-key">공통</span>
-            자동 발사 · Lv10 보스 · 아이템 픽업
+            자동 발사 · Lv10 보스 · 스테이지마다 폭탄 드랍
           </li>
         </ul>
       </section>

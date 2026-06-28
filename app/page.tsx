@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type TouchEvent as ReactTouchEvent,
 } from "react";
+import { BombButton } from "@/components/BombButton";
 import { GameOverPanel } from "@/components/GameOverPanel";
 import { ItemLegendDock } from "@/components/ItemLegendDock";
 import { LobbyScreen } from "@/components/LobbyScreen";
@@ -63,10 +64,22 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.11.1";
+const GAME_VERSION = "0.11.3";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 const MOBILE_PICKUP_TOAST_MS = 1300;
+const BOMB_ATTACK_MULT = 100;
+const STARTING_BOMBS = 3;
+const STAGE_BOMB_DROP_MIN = 3;
+const STAGE_BOMB_DROP_MAX = 10;
+const BOMB_DROP_INTERVAL_MIN_MS = 6500;
+const BOMB_DROP_INTERVAL_MAX_MS = 14500;
+const BOMB_DROP_FIRST_MIN_MS = 3500;
+const BOMB_DROP_FIRST_MAX_MS = 7500;
+const BOMB_COOLDOWN_MS = 520;
+const BOMB_FLASH_MS = 460;
+const BOSS_SPAWN_Y_DESKTOP = 138;
+const BOSS_SPAWN_Y_MOBILE = 152;
 
 type MovementInput = {
   left: boolean;
@@ -252,7 +265,7 @@ type Boss = {
   lastShot: number;
 };
 
-type ItemType = "heal" | "missile" | "power";
+type ItemType = "heal" | "missile" | "power" | "bomb";
 
 type Item = {
   id: number;
@@ -349,6 +362,13 @@ type GameModel = {
   hudMobile: boolean;
   /** playing 시작 시각(ms) — 플레이 시간 기록 */
   playStartedAt: number;
+  bombs: number;
+  bombCooldownUntil: number;
+  bombFlashUntil: number;
+  /** 이번 스테이지에 아직 드랍할 폭탄 개수 */
+  stageBombsLeft: number;
+  /** 다음 폭탄 아이템 드랍 시각(ms) */
+  nextBombDropAt: number;
 };
 
 // --- Pure helpers ---
@@ -475,6 +495,11 @@ function createGameModel(): GameModel {
     pickupToast: null,
     hudMobile: false,
     playStartedAt: 0,
+    bombs: STARTING_BOMBS,
+    bombCooldownUntil: 0,
+    bombFlashUntil: 0,
+    stageBombsLeft: 0,
+    nextBombDropAt: Number.POSITIVE_INFINITY,
   };
 }
 
@@ -526,6 +551,10 @@ function beginPlaying(g: GameModel, plane: PlaneType, now: number): void {
   );
   g.lastPlayerShot = now;
   g.playStartedAt = now;
+  g.bombs = STARTING_BOMBS;
+  g.bombCooldownUntil = 0;
+  g.bombFlashUntil = 0;
+  initStageBombDrops(g, now);
 }
 
 function trySelectPlane(g: GameModel, x: number, y: number, now: number): boolean {
@@ -593,6 +622,51 @@ function spawnEnemy(g: GameModel, playerX: number): void {
   });
 }
 
+function rollStageBombDropCount(): number {
+  return (
+    STAGE_BOMB_DROP_MIN +
+    Math.floor(Math.random() * (STAGE_BOMB_DROP_MAX - STAGE_BOMB_DROP_MIN + 1))
+  );
+}
+
+function initStageBombDrops(g: GameModel, now: number): void {
+  g.stageBombsLeft = rollStageBombDropCount();
+  g.nextBombDropAt = now + randBetween(BOMB_DROP_FIRST_MIN_MS, BOMB_DROP_FIRST_MAX_MS);
+}
+
+function scheduleNextBombDrop(g: GameModel, now: number): void {
+  if (g.stageBombsLeft <= 0) {
+    g.nextBombDropAt = Number.POSITIVE_INFINITY;
+    return;
+  }
+  g.nextBombDropAt = now + randBetween(BOMB_DROP_INTERVAL_MIN_MS, BOMB_DROP_INTERVAL_MAX_MS);
+}
+
+function spawnBombItem(g: GameModel): void {
+  if (g.items.length >= MAX_ITEMS) return;
+  g.items.push({
+    id: nextId(g),
+    x: randBetween(20, CANVAS_W - ITEM_W - 20),
+    y: -ITEM_H,
+    w: ITEM_W,
+    h: ITEM_H,
+    type: "bomb",
+    vy: ITEM_FALL_SPEED * 0.95,
+  });
+}
+
+function updateStageBombDrops(g: GameModel, now: number): void {
+  if (g.phase !== "playing" || g.stageBombsLeft <= 0) return;
+  if (now < g.nextBombDropAt) return;
+  spawnBombItem(g);
+  g.stageBombsLeft -= 1;
+  scheduleNextBombDrop(g, now);
+}
+
+function calcBossSpawnY(hudMobile: boolean): number {
+  return hudMobile ? BOSS_SPAWN_Y_MOBILE : BOSS_SPAWN_Y_DESKTOP;
+}
+
 function spawnBoss(g: GameModel, now: number): void {
   const maxHp = calcBossMaxHp(g.stage);
   const stageMult = getStageDifficulty(g.stage);
@@ -602,7 +676,7 @@ function spawnBoss(g: GameModel, now: number): void {
   g.boss = {
     id: nextId(g),
     x: CANVAS_W / 2 - BOSS_W / 2,
-    y: 40,
+    y: calcBossSpawnY(g.hudMobile),
     w: BOSS_W,
     h: BOSS_H,
     hp: maxHp,
@@ -1000,6 +1074,15 @@ function playBossShootSound(): void {
   playSfxTone(ctx, t0, "triangle", 260, 120, 0.09, 0.032, 0.02);
 }
 
+function playBombSound(): void {
+  const ctx = ensureSfxContext();
+  if (!ctx) return;
+  const t0 = ctx.currentTime;
+  playSfxTone(ctx, t0, "sawtooth", 88, 36, 0.42, 0.14);
+  playSfxTone(ctx, t0, "triangle", 140, 52, 0.36, 0.1, 0.04);
+  playSfxTone(ctx, t0, "sine", 220, 55, 0.28, 0.07, 0.08);
+}
+
 function playLevelUpSound(): void {
   const ctx = ensureSfxContext();
   if (!ctx) return;
@@ -1043,6 +1126,9 @@ function playItemPickupSound(type: ItemType): void {
     playSfxTone(ctx, t0, "sine", 392, 784, 0.26, peak);
   } else if (type === "missile") {
     playSfxTone(ctx, t0, "triangle", 494, 988, 0.18, peak * 0.9);
+  } else if (type === "bomb") {
+    playSfxTone(ctx, t0, "sawtooth", 120, 240, 0.16, peak * 0.85);
+    playSfxTone(ctx, t0, "square", 180, 360, 0.12, peak * 0.55, 0.04);
   } else {
     playSfxTone(ctx, t0, "square", 196, 523, 0.2, peak * 0.65);
   }
@@ -1053,6 +1139,7 @@ function pickupToastMeta(
   planeType: PlaneType
 ): { text: string; color: string } {
   if (type === "heal") return { text: "HP 회복!", color: "#4ade80" };
+  if (type === "bomb") return { text: "폭탄 +1!", color: "#fb923c" };
   if (type === "power") return { text: "공격력 UP!", color: "#fbbf24" };
   if (planeType === "spread") return { text: "탄환 UP!", color: "#60a5fa" };
   return { text: "레이저 UP!", color: "#c084fc" };
@@ -1093,6 +1180,8 @@ function applyItemPickup(g: GameModel, p: Player, type: ItemType, now: number): 
       p.weaponLevel += 2;
       p.attack += 5;
     }
+  } else if (type === "bomb") {
+    g.bombs += 1;
   } else {
     p.attack += 7;
   }
@@ -1144,6 +1233,7 @@ function advanceStageAfterBoss(g: GameModel, now: number): void {
   g.stageIntroUntil = now + STAGE_INTRO_MS;
   g.playerInvulnerableUntil = Math.max(g.playerInvulnerableUntil, now + 1600);
   g.phase = "playing";
+  initStageBombDrops(g, now);
 }
 
 function applyLevelUps(g: GameModel, now: number): void {
@@ -1170,37 +1260,222 @@ function applyLevelUps(g: GameModel, now: number): void {
   }
 }
 
-function bossShoot(g: GameModel, b: Boss, px: number, py: number, now: number): void {
+function spawnBossBullet(
+  g: GameModel,
+  x: number,
+  y: number,
+  vx: number,
+  vy: number,
+  damage: number,
+  now: number
+): void {
   if (g.enemyBullets.length >= MAX_ENEMY_BULLETS) return;
-  const shootEvery = Math.max(380, BOSS_SHOOT_MS - (g.stage - 1) * 32);
-  if (now - b.lastShot < shootEvery) return;
-  b.lastShot = now;
+  g.enemyBullets.push({
+    id: nextId(g),
+    x,
+    y,
+    w: ENEMY_BULLET_W,
+    h: ENEMY_BULLET_H,
+    damage,
+    vx,
+    vy,
+    armedAfter: now + ENEMY_BULLET_ARM_MS,
+  });
+}
 
-  const cx = b.x + b.w / 2 - ENEMY_BULLET_W / 2;
-  const cy = b.y + b.h + 6;
-  const tx = px + PLAYER_W / 2;
-  const ty = py + PLAYER_H / 2;
+type BossPatternCtx = {
+  g: GameModel;
+  b: Boss;
+  px: number;
+  py: number;
+  now: number;
+  speed: number;
+  damage: number;
+};
+
+function bossPatternAimedSingle(c: BossPatternCtx): void {
+  const cx = c.b.x + c.b.w / 2 - ENEMY_BULLET_W / 2;
+  const cy = c.b.y + c.b.h + 6;
+  const tx = c.px + PLAYER_W / 2;
+  const ty = c.py + PLAYER_H / 2;
   const aimX = cx + ENEMY_BULLET_W / 2;
   const aimY = cy + ENEMY_BULLET_H / 2;
   const dx = tx - aimX;
   const dy = ty - aimY;
   const len = Math.hypot(dx, dy) || 1;
-  const speed = ENEMY_BULLET_SPEED * (1 + (g.stage - 1) * 0.06);
-  const vx = (dx / len) * speed;
-  const vy = (dy / len) * speed;
+  spawnBossBullet(
+    c.g,
+    cx,
+    cy,
+    (dx / len) * c.speed,
+    (dy / len) * c.speed,
+    c.damage,
+    c.now
+  );
+}
 
-  g.enemyBullets.push({
-    id: nextId(g),
-    x: cx,
-    y: cy,
-    w: ENEMY_BULLET_W,
-    h: ENEMY_BULLET_H,
-    damage: Math.min(b.damage, Math.round(28 * getStageDifficulty(g.stage))),
-    vx,
-    vy,
-    armedAfter: now + ENEMY_BULLET_ARM_MS,
-  });
+function bossPatternTripleFan(c: BossPatternCtx): void {
+  const cx = c.b.x + c.b.w / 2;
+  const cy = c.b.y + c.b.h + 8;
+  const tx = c.px + PLAYER_W / 2;
+  const ty = c.py + PLAYER_H / 2;
+  const base = Math.atan2(ty - cy, tx - cx);
+  const spread = 0.28;
+  for (const offset of [-spread, 0, spread]) {
+    const angle = base + offset;
+    spawnBossBullet(
+      c.g,
+      cx - ENEMY_BULLET_W / 2,
+      cy,
+      Math.cos(angle) * c.speed,
+      Math.sin(angle) * c.speed,
+      c.damage,
+      c.now
+    );
+  }
+}
+
+function bossPatternRingBurst(c: BossPatternCtx): void {
+  const cx = c.b.x + c.b.w / 2;
+  const cy = c.b.y + c.b.h * 0.55;
+  const count = 8;
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + Math.PI / 2;
+    spawnBossBullet(
+      c.g,
+      cx - ENEMY_BULLET_W / 2,
+      cy,
+      Math.cos(angle) * c.speed * 0.82,
+      Math.sin(angle) * c.speed * 0.82,
+      Math.round(c.damage * 0.85),
+      c.now
+    );
+  }
+}
+
+function bossPatternSideStreams(c: BossPatternCtx): void {
+  const y = c.b.y + c.b.h + 4;
+  const leftX = c.b.x + 8;
+  const rightX = c.b.x + c.b.w - ENEMY_BULLET_W - 8;
+  const streamSpeed = c.speed * 0.92;
+  for (const x of [leftX, rightX]) {
+    spawnBossBullet(c.g, x, y, 0, streamSpeed, c.damage, c.now);
+    spawnBossBullet(
+      c.g,
+      x,
+      y,
+      x < c.b.x + c.b.w / 2 ? -streamSpeed * 0.35 : streamSpeed * 0.35,
+      streamSpeed,
+      Math.round(c.damage * 0.9),
+      c.now
+    );
+  }
+}
+
+function bossPatternCrossBurst(c: BossPatternCtx): void {
+  const cx = c.b.x + c.b.w / 2 - ENEMY_BULLET_W / 2;
+  const cy = c.b.y + c.b.h + 6;
+  const diag = c.speed * 0.72;
+  const dirs = [
+    { vx: 0, vy: c.speed },
+    { vx: -diag, vy: diag },
+    { vx: diag, vy: diag },
+    { vx: 0, vy: c.speed * 1.05 },
+  ];
+  for (const d of dirs) {
+    spawnBossBullet(c.g, cx, cy, d.vx, d.vy, Math.round(c.damage * 0.88), c.now);
+  }
+}
+
+const BOSS_ATTACK_PATTERNS: ((c: BossPatternCtx) => void)[] = [
+  bossPatternAimedSingle,
+  bossPatternTripleFan,
+  bossPatternRingBurst,
+  bossPatternSideStreams,
+  bossPatternCrossBurst,
+];
+
+function bossShoot(g: GameModel, b: Boss, px: number, py: number, now: number): void {
+  if (g.enemyBullets.length >= MAX_ENEMY_BULLETS) return;
+  const shootEvery = Math.max(340, BOSS_SHOOT_MS - (g.stage - 1) * 32 - (g.player.level - 10) * 18);
+  if (now - b.lastShot < shootEvery) return;
+  b.lastShot = now;
+
+  const speed = ENEMY_BULLET_SPEED * (1 + (g.stage - 1) * 0.06);
+  const damage = Math.min(b.damage, Math.round(28 * getStageDifficulty(g.stage)));
+  const patternCount = Math.min(
+    BOSS_ATTACK_PATTERNS.length,
+    Math.max(1, g.player.level - 9)
+  );
+  const ctx: BossPatternCtx = { g, b, px, py, now, speed, damage };
+
+  for (let i = 0; i < patternCount; i++) {
+    if (g.enemyBullets.length >= MAX_ENEMY_BULLETS) break;
+    BOSS_ATTACK_PATTERNS[i](ctx);
+  }
   playBossShootSound();
+}
+
+function useBomb(g: GameModel, now: number): boolean {
+  if (g.phase !== "playing" || g.bombs <= 0) return false;
+  if (now < g.bombCooldownUntil) return false;
+
+  resumeGameAudio();
+  const p = g.player;
+  const damage = Math.round(p.attack * BOMB_ATTACK_MULT);
+  g.bombs -= 1;
+  g.bombCooldownUntil = now + BOMB_COOLDOWN_MS;
+  g.bombFlashUntil = now + BOMB_FLASH_MS;
+  g.enemyBullets = [];
+
+  for (let i = g.enemies.length - 1; i >= 0; i--) {
+    const e = g.enemies[i];
+    e.hp -= damage;
+    if (e.hp <= 0) {
+      killEnemy(g, e, i, now);
+    } else {
+      playEnemyHitSound(now, false);
+    }
+  }
+
+  if (g.boss && g.boss.hp > 0) {
+    const b = g.boss;
+    b.hp -= damage;
+    if (b.hp <= 0) {
+      g.score += SCORE_BOSS;
+      advanceStageAfterBoss(g, now);
+    } else {
+      playBossHitSound(now);
+    }
+  }
+
+  playBombSound();
+  g.pickupToast = {
+    text: `💣 ${damage.toLocaleString()} dmg`,
+    color: "#fb923c",
+    startAt: now,
+    until: now + (g.hudMobile ? MOBILE_PICKUP_TOAST_MS : PICKUP_TOAST_MS),
+  };
+  return true;
+}
+
+function drawBombFlash(ctx: CanvasRenderingContext2D, g: GameModel, now: number): void {
+  if (!g.bombFlashUntil || now >= g.bombFlashUntil) return;
+  const remain = g.bombFlashUntil - now;
+  const t = 1 - remain / BOMB_FLASH_MS;
+  const alpha = (1 - t) * 0.62;
+  const cx = CANVAS_W / 2;
+  const cy = CANVAS_H * 0.4;
+  const r = CANVAS_W * (0.25 + t * 0.55);
+
+  ctx.save();
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  grad.addColorStop(0, `rgba(255, 237, 213, ${alpha})`);
+  grad.addColorStop(0.35, `rgba(251, 146, 60, ${alpha * 0.75})`);
+  grad.addColorStop(1, "rgba(249, 115, 22, 0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.restore();
 }
 
 function drawSelectScreen(ctx: CanvasRenderingContext2D, now: number): void {
@@ -1363,6 +1638,23 @@ function drawItem(ctx: CanvasRenderingContext2D, it: Item, now: number): void {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("M", 0, r * 0.1);
+  } else if (it.type === "bomb") {
+    ctx.fillStyle = "rgba(251, 146, 60, 0.38)";
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fb923c";
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ffedd5";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#431407";
+    ctx.font = "bold 14px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("B", 0, 1);
   } else {
     ctx.fillStyle = "rgba(240, 180, 41, 0.35)";
     ctx.beginPath();
@@ -2024,6 +2316,8 @@ function drawGame(
     drawPickupToast(ctx, g.pickupToast, now, layout);
   }
 
+  drawBombFlash(ctx, g, now);
+
   if (g.phase === "playing" && now < g.stageIntroUntil) {
     ctx.fillStyle = "rgba(0,0,0,0.45)";
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
@@ -2068,6 +2362,8 @@ function drawGame(
 
 function updateGame(g: GameModel, dt: number, now: number): void {
   if (g.phase !== "playing") return;
+
+  updateStageBombDrops(g, now);
 
   const p = g.player;
   const canTakeDamage = now >= g.playerInvulnerableUntil;
@@ -2251,6 +2547,8 @@ export default function Home() {
   } | null>(null);
   const [uiPhase, setUiPhase] = useState<GamePhase>("select");
   const [playingPlane, setPlayingPlane] = useState<SharePlane>("spread");
+  const [bombCount, setBombCount] = useState(STARTING_BOMBS);
+  const bombsRef = useRef(STARTING_BOMBS);
   const touchSteerRef = useRef<{ active: boolean; pointerId: number | null }>({
     active: false,
     pointerId: null,
@@ -2287,6 +2585,11 @@ export default function Home() {
 
       if (g.phase === "playing") {
         updateGame(g, dt, ts);
+      }
+
+      if (g.bombs !== bombsRef.current) {
+        bombsRef.current = g.bombs;
+        queueMicrotask(() => setBombCount(g.bombs));
       }
 
       if (g.phase !== uiPhaseRef.current) {
@@ -2375,6 +2678,15 @@ export default function Home() {
     mainRef.current?.focus({ preventScroll: true });
   }, []);
 
+  const applyBomb = useCallback(() => {
+    const g = gameRef.current;
+    if (useBomb(g, performance.now())) {
+      bombsRef.current = g.bombs;
+      setBombCount(g.bombs);
+      resumeGameAudio();
+    }
+  }, []);
+
   const applyJoystickMove = useCallback((mx: number, my: number) => {
     const g = gameRef.current;
     g.touchSteer.active = true;
@@ -2444,6 +2756,8 @@ export default function Home() {
   const handleSelectPlane = useCallback(
     (plane: PlaneType) => {
       setPlayingPlane(plane);
+      setBombCount(STARTING_BOMBS);
+      bombsRef.current = STARTING_BOMBS;
       beginPlaying(gameRef.current, plane, performance.now());
       uiPhaseRef.current = "playing";
       setUiPhase("playing");
@@ -2474,6 +2788,18 @@ export default function Home() {
           handleSelectPlane("laser");
           return;
         }
+      }
+      if (
+        g.phase === "playing" &&
+        (e.key === "b" || e.key === "B" || e.code === "KeyB")
+      ) {
+        if (useBomb(g, performance.now())) {
+          bombsRef.current = g.bombs;
+          setBombCount(g.bombs);
+          resumeGameAudio();
+        }
+        e.preventDefault();
+        return;
       }
       if (applyKeyboardMove(e, true, g.kbMove)) {
         resumeGameAudio();
@@ -2519,6 +2845,8 @@ export default function Home() {
   const handleRestart = useCallback(() => {
     const plane = gameOver?.plane ?? gameRef.current.player.planeType;
     setPlayingPlane(plane);
+    setBombCount(STARTING_BOMBS);
+    bombsRef.current = STARTING_BOMBS;
     endedRef.current = false;
     rankingRef.current = loadRanking();
     const g = createGameModel();
@@ -2580,9 +2908,9 @@ export default function Home() {
           {uiPhase === "playing" && (
             <div className="game-page__bottom game-page__bottom--joystick">
               <div className="game-page__bottom-dock">
-                <ItemLegendDock plane={playingPlane} side="left" />
+                <ItemLegendDock plane={playingPlane} />
                 <VirtualJoystick onMove={applyJoystickMove} onEnd={applyJoystickEnd} />
-                <ItemLegendDock plane={playingPlane} side="right" />
+                <BombButton count={bombCount} onBomb={applyBomb} />
               </div>
             </div>
           )}

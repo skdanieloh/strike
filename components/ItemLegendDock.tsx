@@ -4,7 +4,6 @@ import type { SharePlane } from "@/lib/share";
 
 type ItemLegendDockProps = {
   plane: SharePlane;
-  side: "left" | "right";
 };
 
 type LegendItem = {
@@ -24,25 +23,17 @@ function LegendChip({ color, sym, label }: LegendItem) {
   );
 }
 
-function itemsForSide(plane: SharePlane, side: "left" | "right"): LegendItem[] {
+export function ItemLegendDock({ plane }: ItemLegendDockProps) {
   const missileLabel = plane === "spread" ? "탄환↑" : "레이저↑";
-  if (side === "left") {
-    return [
-      { color: "#3ecf8e", sym: "+", label: "HP회복" },
-      { color: "#f0b429", sym: "P", label: "공격↑" },
-    ];
-  }
-  return [{ color: "#6cb6ff", sym: "M", label: missileLabel }];
-}
-
-export function ItemLegendDock({ plane, side }: ItemLegendDockProps) {
-  const items = itemsForSide(plane, side);
+  const items: LegendItem[] = [
+    { color: "#3ecf8e", sym: "+", label: "HP회복" },
+    { color: "#f0b429", sym: "P", label: "공격↑" },
+    { color: "#6cb6ff", sym: "M", label: missileLabel },
+    { color: "#fb923c", sym: "B", label: "폭탄↓" },
+  ];
 
   return (
-    <div
-      className={`item-legend-dock item-legend-dock--${side}`}
-      aria-label={side === "left" ? "아이템 안내" : undefined}
-    >
+    <div className="item-legend-dock" aria-label="아이템 안내">
       {items.map((item) => (
         <LegendChip key={item.label} {...item} />
       ))}

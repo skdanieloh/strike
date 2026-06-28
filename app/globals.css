@@ -838,28 +838,20 @@ body {
   .item-legend-dock {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 5px;
     min-width: 0;
-  }
-
-  .item-legend-dock--left {
     align-items: flex-end;
-  }
-
-  .item-legend-dock--right {
-    align-items: flex-start;
     justify-content: center;
-    min-height: 112px;
   }
 
   .item-legend-chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     max-width: 100%;
-    padding: 6px 8px;
+    padding: 5px 7px;
     border: 1px solid rgba(148, 163, 184, 0.28);
-    border-radius: 10px;
+    border-radius: 9px;
     background: rgba(2, 6, 23, 0.62);
     backdrop-filter: blur(4px);
   }
@@ -868,23 +860,91 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
     background: var(--chip-color);
     color: #0f172a;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
     flex-shrink: 0;
   }
 
   .item-legend-chip__label {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     color: #e2e8f0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .bomb-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    min-height: 112px;
+    padding: 6px 8px;
+    border: 2px solid rgba(251, 146, 60, 0.45);
+    border-radius: 16px;
+    background: rgba(67, 20, 7, 0.55);
+    color: #fed7aa;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.12s, border-color 0.12s, background 0.12s;
+  }
+
+  .bomb-button:active:not(:disabled) {
+    transform: scale(0.96);
+    border-color: rgba(251, 146, 60, 0.75);
+    background: rgba(124, 45, 18, 0.72);
+  }
+
+  .bomb-button--empty {
+    opacity: 0.42;
+    border-color: rgba(100, 116, 139, 0.35);
+    background: rgba(15, 23, 42, 0.55);
+    cursor: not-allowed;
+  }
+
+  .bomb-button__ring {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 2px solid rgba(251, 146, 60, 0.35);
+    background: rgba(2, 6, 23, 0.45);
+  }
+
+  .bomb-button__icon {
+    font-size: 26px;
+    line-height: 1;
+  }
+
+  .bomb-button__label {
+    font-size: 12px;
+    font-weight: 800;
+    color: #fdba74;
+  }
+
+  .bomb-button__count {
+    font-size: 13px;
+    font-weight: 800;
+    color: #fff7ed;
+  }
+
+  .bomb-button__hint {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #fb923c;
+    opacity: 0.85;
   }
 
   .game-page__bottom--joystick .mobile-pad {
