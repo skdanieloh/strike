@@ -54,8 +54,9 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.7.1";
+const GAME_VERSION = "0.7.2";
 const HEAL_PULSE_MS = 750;
+const PICKUP_TOAST_MS = 1000;
 
 type MovementInput = {
   left: boolean;
@@ -240,6 +241,13 @@ type HealPulse = {
   until: number;
 };
 
+type PickupToast = {
+  text: string;
+  color: string;
+  startAt: number;
+  until: number;
+};
+
 type GamePhase = "select" | "playing" | "gameover";
 
 type GameModel = {
@@ -268,6 +276,7 @@ type GameModel = {
   laserVisual: LaserVisual | null;
   /** 회복 아이템 픽업 시 HP 바 애니메이션 */
   healPulse: HealPulse | null;
+  pickupToast: PickupToast | null;
 };
 
 // --- Pure helpers ---
@@ -390,6 +399,7 @@ function createGameModel(): GameModel {
     stageIntroUntil: 0,
     laserVisual: null,
     healPulse: null,
+    pickupToast: null,
   };
 }
 
@@ -414,6 +424,7 @@ function waveSizeForLevel(level: number): number {
 }
 
 function beginPlaying(g: GameModel, plane: PlaneType, now: number): void {
+  resumeGameAudio();
   g.player = createInitialPlayer(plane);
   g.enemies = [];
   g.boss = null;
@@ -427,6 +438,7 @@ function beginPlaying(g: GameModel, plane: PlaneType, now: number): void {
   g.playerInvulnerableUntil = 0;
   g.laserVisual = null;
   g.healPulse = null;
+  g.pickupToast = null;
   g.phase = "playing";
   g.nextEnemySpawnAt = now + 550;
   g.nextEnemySpawnDelay = randBetween(
@@ -692,6 +704,118 @@ function updateLaserWeapon(g: GameModel, p: Player, dt: number, now: number): vo
       }
     }
   }
+}
+
+let sfxAudioCtx: AudioContext | null = null;
+
+function getSfxContext(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  const Ctx =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext })
+      .webkitAudioContext;
+  if (!Ctx) return null;
+  if (!sfxAudioCtx) sfxAudioCtx = new Ctx();
+  return sfxAudioCtx;
+}
+
+function resumeGameAudio(): void {
+  const ctx = getSfxContext();
+  if (ctx && ctx.state === "suspended") {
+    void ctx.resume();
+  }
+}
+
+function playItemPickupSound(type: ItemType): void {
+  const ctx = getSfxContext();
+  if (!ctx) return;
+  if (ctx.state === "suspended") void ctx.resume();
+
+  const t0 = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  const peak = 0.11;
+  gain.gain.setValueAtTime(0.0001, t0);
+
+  if (type === "heal") {
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(392, t0);
+    osc.frequency.exponentialRampToValueAtTime(784, t0 + 0.14);
+    gain.gain.exponentialRampToValueAtTime(peak, t0 + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+    osc.start(t0);
+    osc.stop(t0 + 0.28);
+  } else if (type === "missile") {
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(494, t0);
+    osc.frequency.exponentialRampToValueAtTime(988, t0 + 0.1);
+    gain.gain.exponentialRampToValueAtTime(peak * 0.9, t0 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
+    osc.start(t0);
+    osc.stop(t0 + 0.2);
+  } else {
+    osc.type = "square";
+    osc.frequency.setValueAtTime(196, t0);
+    osc.frequency.exponentialRampToValueAtTime(523, t0 + 0.08);
+    gain.gain.exponentialRampToValueAtTime(peak * 0.65, t0 + 0.018);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+    osc.start(t0);
+    osc.stop(t0 + 0.22);
+  }
+}
+
+function pickupToastMeta(
+  type: ItemType,
+  planeType: PlaneType
+): { text: string; color: string } {
+  if (type === "heal") return { text: "HP 회복!", color: "#4ade80" };
+  if (type === "power") return { text: "공격력 UP!", color: "#fbbf24" };
+  if (planeType === "spread") return { text: "탄환 UP!", color: "#60a5fa" };
+  return { text: "레이저 UP!", color: "#c084fc" };
+}
+
+function showPickupFeedback(
+  g: GameModel,
+  type: ItemType,
+  planeType: PlaneType,
+  now: number
+): void {
+  const meta = pickupToastMeta(type, planeType);
+  g.pickupToast = {
+    text: meta.text,
+    color: meta.color,
+    startAt: now,
+    until: now + PICKUP_TOAST_MS,
+  };
+  playItemPickupSound(type);
+}
+
+function applyItemPickup(g: GameModel, p: Player, type: ItemType, now: number): void {
+  if (type === "heal") {
+    const prevHp = p.hp;
+    p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.35));
+    g.healPulse = {
+      fromHp: prevHp,
+      toHp: p.hp,
+      startAt: now,
+      until: now + HEAL_PULSE_MS,
+    };
+  } else if (type === "missile") {
+    if (p.planeType === "spread") {
+      p.missileCount += 4;
+      p.weaponLevel += 1;
+      p.attack += 3;
+    } else {
+      p.weaponLevel += 2;
+      p.attack += 5;
+    }
+  } else {
+    p.attack += 7;
+  }
+  showPickupFeedback(g, type, p.planeType, now);
 }
 
 function tryDropItem(g: GameModel, ex: number, ey: number): void {
@@ -1129,6 +1253,43 @@ function drawBossHealthBar(
   ctx.textAlign = "left";
 }
 
+function drawPickupToast(
+  ctx: CanvasRenderingContext2D,
+  toast: PickupToast,
+  now: number
+): void {
+  const elapsed = now - toast.startAt;
+  const dur = toast.until - toast.startAt;
+  if (elapsed >= dur) return;
+
+  const t = elapsed / dur;
+  const fadeIn = Math.min(1, elapsed / 120);
+  const fadeOut = t > 0.55 ? 1 - (t - 0.55) / 0.45 : 1;
+  const alpha = fadeIn * fadeOut;
+  const floatY = CANVAS_H * 0.36 - t * 28;
+  const scale = 1 + Math.sin(elapsed / 90) * 0.04;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(CANVAS_W / 2, floatY);
+  ctx.scale(scale, scale);
+
+  ctx.font = "bold 26px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  const tw = ctx.measureText(toast.text).width;
+  ctx.fillRect(-tw / 2 - 18, -22, tw + 36, 44);
+  ctx.strokeStyle = toast.color;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(-tw / 2 - 18, -22, tw + 36, 44);
+
+  ctx.fillStyle = toast.color;
+  ctx.fillText(toast.text, 0, 0);
+
+  ctx.restore();
+}
+
 function drawGame(
   ctx: CanvasRenderingContext2D,
   g: GameModel,
@@ -1137,6 +1298,9 @@ function drawGame(
 ): void {
   if (g.healPulse && now >= g.healPulse.until) {
     g.healPulse = null;
+  }
+  if (g.pickupToast && now >= g.pickupToast.until) {
+    g.pickupToast = null;
   }
 
   if (g.phase === "select") {
@@ -1242,6 +1406,10 @@ function drawGame(
 
   if (g.boss && g.boss.hp > 0) {
     drawBossHealthBar(ctx, g.boss, g.stage);
+  }
+
+  if (g.pickupToast) {
+    drawPickupToast(ctx, g.pickupToast, now);
   }
 
   if (g.phase === "playing" && now < g.stageIntroUntil) {
@@ -1403,27 +1571,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
   for (let i = g.items.length - 1; i >= 0; i--) {
     const it = g.items[i];
     if (!rectsOverlap(p.x, p.y, p.w, p.h, it.x, it.y, it.w, it.h)) continue;
-    if (it.type === "heal") {
-      const prevHp = p.hp;
-      p.hp = Math.min(p.maxHp, p.hp + Math.floor(p.maxHp * 0.35));
-      g.healPulse = {
-        fromHp: prevHp,
-        toHp: p.hp,
-        startAt: now,
-        until: now + HEAL_PULSE_MS,
-      };
-    } else if (it.type === "missile") {
-      if (p.planeType === "spread") {
-        p.missileCount += 4;
-        p.weaponLevel += 1;
-        p.attack += 3;
-      } else {
-        p.weaponLevel += 2;
-        p.attack += 5;
-      }
-    } else {
-      p.attack += 7;
-    }
+    applyItemPickup(g, p, it.type, now);
     g.items.splice(i, 1);
   }
 
@@ -1510,6 +1658,7 @@ export default function Home() {
 
   const bindPadKey = useCallback((dir: keyof MovementInput) => {
     const setPad = (down: boolean) => {
+      if (down) resumeGameAudio();
       gameRef.current.padMove[dir] = down;
     };
     return {
@@ -1549,6 +1698,7 @@ export default function Home() {
       if (!canvas) return;
       const pt = canvasPointFromEvent(canvas, e.clientX, e.clientY);
       if (trySelectPlane(gameRef.current, pt.x, pt.y, performance.now())) {
+        resumeGameAudio();
         focusGame();
       }
     },
@@ -1579,6 +1729,7 @@ export default function Home() {
         }
       }
       if (applyKeyboardMove(e, true, g.kbMove)) {
+        resumeGameAudio();
         e.preventDefault();
       }
     };
