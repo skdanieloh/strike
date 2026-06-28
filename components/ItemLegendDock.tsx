@@ -3,7 +3,7 @@
 import type { SharePlane } from "@/lib/share";
 
 type ItemLegendDockProps = {
-  plane: SharePlane;
+  plane?: SharePlane;
 };
 
 type LegendItem = {
@@ -24,7 +24,8 @@ function LegendChip({ color, sym, label }: LegendItem) {
 }
 
 export function ItemLegendDock({ plane }: ItemLegendDockProps) {
-  const missileLabel = plane === "spread" ? "탄환↑" : "레이저↑";
+  const missileLabel =
+    plane === "spread" ? "탄환↑" : plane === "laser" ? "레이저↑" : "탄·레이저↑";
   const items: LegendItem[] = [
     { color: "#3ecf8e", sym: "+", label: "HP회복" },
     { color: "#f0b429", sym: "P", label: "공격↑" },

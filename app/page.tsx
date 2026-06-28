@@ -11,7 +11,6 @@ import {
 import { ActiveSkillButton } from "@/components/ActiveSkillButton";
 import { BombButton } from "@/components/BombButton";
 import { GameOverPanel } from "@/components/GameOverPanel";
-import { ItemLegendDock } from "@/components/ItemLegendDock";
 import { LobbyScreen } from "@/components/LobbyScreen";
 import { VirtualJoystick } from "@/components/VirtualJoystick";
 import type { SharePlane } from "@/lib/share";
@@ -65,7 +64,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.12.0";
+const GAME_VERSION = "0.12.1";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 const MOBILE_PICKUP_TOAST_MS = 1300;
@@ -3372,9 +3371,7 @@ export default function Home() {
           {uiPhase === "playing" && (
             <div className="game-page__bottom game-page__bottom--joystick">
               <div className="game-page__bottom-dock">
-                <ItemLegendDock plane={playingPlane} />
-                <VirtualJoystick onMove={applyJoystickMove} onEnd={applyJoystickEnd} />
-                <div className="game-page__right-dock">
+                <div className="game-page__left-dock">
                   <ActiveSkillButton
                     plane={playingPlane}
                     ready={skillReady}
@@ -3382,6 +3379,9 @@ export default function Home() {
                     cooldownSec={skillCooldownSec}
                     onActivate={applyActiveSkill}
                   />
+                </div>
+                <VirtualJoystick onMove={applyJoystickMove} onEnd={applyJoystickEnd} />
+                <div className="game-page__right-dock">
                   <BombButton count={bombCount} onBomb={applyBomb} />
                 </div>
               </div>

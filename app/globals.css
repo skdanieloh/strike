@@ -425,6 +425,53 @@ body {
   text-align: center;
 }
 
+.lobby-screen__items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lobby-screen .item-legend-dock {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
+}
+
+.lobby-screen .item-legend-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.62);
+}
+
+.lobby-screen .item-legend-chip__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--chip-color);
+  color: #0f172a;
+  font-size: 10px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.lobby-screen .item-legend-chip__label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
 .lobby-screen__control-list {
   margin: 0;
   padding: 0;
@@ -859,52 +906,7 @@ body {
     max-width: 520px;
   }
 
-  .item-legend-dock {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 5px;
-    min-width: 0;
-    align-content: center;
-  }
-
-  .item-legend-chip {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    min-width: 0;
-    width: 100%;
-    padding: 4px 6px;
-    border: 1px solid rgba(148, 163, 184, 0.28);
-    border-radius: 9px;
-    background: rgba(2, 6, 23, 0.62);
-    backdrop-filter: blur(4px);
-  }
-
-  .item-legend-chip__icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--chip-color);
-    color: #0f172a;
-    font-size: 10px;
-    font-weight: 800;
-    flex-shrink: 0;
-  }
-
-  .item-legend-chip__label {
-    font-size: 10px;
-    font-weight: 700;
-    color: #e2e8f0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-    flex: 1;
-  }
-
+  .game-page__left-dock,
   .game-page__right-dock {
     display: flex;
     flex-direction: column;
@@ -912,6 +914,14 @@ body {
     justify-content: center;
     gap: 6px;
     min-width: 0;
+  }
+
+  .game-page__left-dock {
+    align-items: flex-end;
+  }
+
+  .game-page__right-dock {
+    align-items: flex-start;
   }
 
   .skill-button {
