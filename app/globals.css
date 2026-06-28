@@ -829,7 +829,21 @@ body {
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    padding: 14px 12px max(14px, env(safe-area-inset-bottom));
+    padding: max(14px, env(safe-area-inset-top, 14px)) 12px max(14px, env(safe-area-inset-bottom));
+  }
+
+  .game-over-panel__score {
+    font-size: clamp(34px, 11vw, 48px);
+  }
+
+  .game-over-panel__meta {
+    font-size: 16px;
+  }
+
+  .game-over-panel__hint {
+    font-size: 13px;
+    line-height: 1.45;
+    max-width: 100%;
   }
 
   .game-over-panel__actions {
@@ -839,9 +853,22 @@ body {
 
   .game-over-panel__btn {
     flex: 1 1 130px;
-    min-height: 48px;
+    min-height: 52px;
     padding: 12px 18px;
-    font-size: 15px;
+    font-size: 16px;
+  }
+
+  .game-over-panel .global-ranking {
+    width: 100%;
+    max-width: none;
+  }
+
+  .game-over-panel .global-ranking__name {
+    font-size: 14px;
+  }
+
+  .game-over-panel .global-ranking__score {
+    font-size: 14px;
   }
 }
 

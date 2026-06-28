@@ -62,9 +62,10 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.10.1";
+const GAME_VERSION = "0.10.2";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
+const MOBILE_PICKUP_TOAST_MS = 1300;
 
 type MovementInput = {
   left: boolean;
@@ -343,6 +344,8 @@ type GameModel = {
   /** 회복 아이템 픽업 시 HP 바 애니메이션 */
   healPulse: HealPulse | null;
   pickupToast: PickupToast | null;
+  /** tick에서 갱신 — 모바일 HUD·토스트 타이밍 */
+  hudMobile: boolean;
 };
 
 // --- Pure helpers ---
@@ -467,6 +470,7 @@ function createGameModel(): GameModel {
     laserVisual: null,
     healPulse: null,
     pickupToast: null,
+    hudMobile: false,
   };
 }
 
@@ -1060,7 +1064,7 @@ function showPickupFeedback(
     text: meta.text,
     color: meta.color,
     startAt: now,
-    until: now + PICKUP_TOAST_MS,
+    until: now + (g.hudMobile ? MOBILE_PICKUP_TOAST_MS : PICKUP_TOAST_MS),
   };
   playItemPickupSound(type);
 }
@@ -1392,14 +1396,170 @@ function drawItem(ctx: CanvasRenderingContext2D, it: Item, now: number): void {
   ctx.restore();
 }
 
-function drawItemLegend(ctx: CanvasRenderingContext2D, planeType: PlaneType): void {
-  const y = CANVAS_H - 26;
+/** 모바일은 캔버스가 축소되어 HUD 글자·게이지가 함께 작아지므로 별도 레이아웃 적용 */
+type HudLayout = {
+  mobile: boolean;
+  marginX: number;
+  barW: number;
+  hpBarH: number;
+  expBarH: number;
+  hpY: number;
+  expY: number;
+  statY1: number;
+  statY2: number;
+  fontHp: string;
+  fontExp: string;
+  fontStat: string;
+  fontStatBold: string;
+  fontBossTitle: string;
+  fontBossHp: string;
+  bossBarH: number;
+  bossY: number;
+  toastYRatio: number;
+  toastFont: string;
+  legendY: number;
+  showVersion: boolean;
+};
+
+function getHudLayout(mobile: boolean): HudLayout {
+  if (!mobile) {
+    return {
+      mobile: false,
+      marginX: 12,
+      barW: 220,
+      hpBarH: 14,
+      expBarH: 12,
+      hpY: 12,
+      expY: 32,
+      statY1: 62,
+      statY2: 62,
+      fontHp: "12px ui-monospace, monospace",
+      fontExp: "12px ui-monospace, monospace",
+      fontStat: "14px ui-monospace, monospace",
+      fontStatBold: "bold 14px ui-monospace, monospace",
+      fontBossTitle: "bold 14px ui-sans-serif, system-ui",
+      fontBossHp: "12px ui-monospace, monospace",
+      bossBarH: 20,
+      bossY: 86,
+      toastYRatio: 0.36,
+      toastFont: "bold 26px ui-sans-serif, system-ui",
+      legendY: CANVAS_H - 26,
+      showVersion: true,
+    };
+  }
+
+  const marginX = 14;
+  const barW = CANVAS_W - marginX * 2;
+  const hpBarH = 22;
+  const expBarH = 18;
+  const hpY = 14;
+  const expY = hpY + hpBarH + 8;
+  const statY1 = expY + expBarH + 14;
+  const statY2 = statY1 + 24;
+
+  return {
+    mobile: true,
+    marginX,
+    barW,
+    hpBarH,
+    expBarH,
+    hpY,
+    expY,
+    statY1,
+    statY2,
+    fontHp: "bold 18px ui-sans-serif, system-ui",
+    fontExp: "16px ui-monospace, monospace",
+    fontStat: "16px ui-monospace, monospace",
+    fontStatBold: "bold 20px ui-monospace, monospace",
+    fontBossTitle: "bold 20px ui-sans-serif, system-ui",
+    fontBossHp: "16px ui-monospace, monospace",
+    bossBarH: 26,
+    bossY: statY2 + 16,
+    toastYRatio: 0.27,
+    toastFont: "bold 38px ui-sans-serif, system-ui",
+    legendY: CANVAS_H - 38,
+    showVersion: false,
+  };
+}
+
+function hudBackdropHeight(g: GameModel, layout: HudLayout): number {
+  if (g.boss && g.boss.hp > 0) {
+    return layout.bossY + layout.bossBarH + 28;
+  }
+  return layout.statY2 + 10;
+}
+
+function drawHudBackdrop(
+  ctx: CanvasRenderingContext2D,
+  g: GameModel,
+  layout: HudLayout
+): void {
+  if (!layout.mobile || g.phase !== "playing") return;
+  const h = hudBackdropHeight(g, layout);
+  ctx.fillStyle = "rgba(2, 6, 23, 0.52)";
+  ctx.fillRect(0, 0, CANVAS_W, h);
+}
+
+function drawOutlinedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  fill: string,
+  stroke = "rgba(0,0,0,0.65)",
+  lineWidth = 3
+): void {
+  ctx.lineWidth = lineWidth;
+  ctx.strokeStyle = stroke;
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = fill;
+  ctx.fillText(text, x, y);
+}
+
+function drawItemLegend(
+  ctx: CanvasRenderingContext2D,
+  planeType: PlaneType,
+  layout: HudLayout
+): void {
   const missileLabel = planeType === "spread" ? "탄환↑" : "레이저↑";
   const entries: { color: string; label: string; sym: string }[] = [
     { color: "#3ecf8e", label: "HP회복", sym: "+" },
     { color: "#6cb6ff", label: missileLabel, sym: "M" },
     { color: "#f0b429", label: "공격↑", sym: "P" },
   ];
+
+  if (layout.mobile) {
+    const chipW = 112;
+    const chipH = 28;
+    const gap = 8;
+    const totalW = entries.length * chipW + (entries.length - 1) * gap;
+    let x = (CANVAS_W - totalW) / 2;
+    const y = layout.legendY;
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    for (const e of entries) {
+      ctx.fillStyle = "rgba(2, 6, 23, 0.72)";
+      ctx.fillRect(x, y - chipH / 2, chipW, chipH);
+      ctx.strokeStyle = "rgba(148, 163, 184, 0.35)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y - chipH / 2 + 0.5, chipW - 1, chipH - 1);
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.arc(x + 16, y, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = "bold 13px ui-monospace, monospace";
+      ctx.fillStyle = "#0f172a";
+      ctx.fillText(e.sym, x + 13, y + 1);
+      ctx.font = "bold 15px ui-sans-serif, system-ui";
+      ctx.fillStyle = "#f1f5f9";
+      ctx.fillText(e.label, x + 30, y);
+      x += chipW + gap;
+    }
+    return;
+  }
+
+  const y = layout.legendY;
   let x = 14;
   ctx.font = "11px ui-monospace, monospace";
   ctx.textAlign = "left";
@@ -1425,12 +1585,13 @@ function drawPlayerHpBar(
   ctx: CanvasRenderingContext2D,
   p: Player,
   healPulse: HealPulse | null,
-  now: number
+  now: number,
+  layout: HudLayout
 ): void {
-  const barW = 220;
-  const barH = 14;
-  const x = 12;
-  const y = 12;
+  const barW = layout.barW;
+  const barH = layout.hpBarH;
+  const x = layout.marginX;
+  const y = layout.hpY;
 
   let displayHp = p.hp;
   let pulsing = false;
@@ -1450,7 +1611,7 @@ function drawPlayerHpBar(
   const hpRatio = Math.max(0, Math.min(1, displayHp / p.maxHp));
 
   if (pulsing) {
-    const glowA = 0.35 + Math.sin((now - (healPulse!.startAt)) / 90) * 0.2;
+    const glowA = 0.35 + Math.sin((now - healPulse!.startAt) / 90) * 0.2;
     ctx.save();
     ctx.shadowColor = "#4ade80";
     ctx.shadowBlur = 14 * pulseScale;
@@ -1476,9 +1637,25 @@ function drawPlayerHpBar(
   ctx.lineWidth = pulsing ? 2 : 1;
   ctx.strokeRect(x + 0.5, y + 0.5, barW - 1, barH - 1);
 
-  ctx.fillStyle = pulsing ? "#ecfdf5" : "#e5e7eb";
-  ctx.font = pulsing ? "bold 12px ui-monospace, monospace" : "12px ui-monospace, monospace";
   const hpText = `HP ${Math.max(0, Math.ceil(displayHp))}/${p.maxHp}`;
+  ctx.font = layout.fontHp;
+
+  if (layout.mobile) {
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    drawOutlinedText(ctx, hpText, x + barW / 2, y + barH / 2, pulsing ? "#ecfdf5" : "#f8fafc");
+    if (pulsing) {
+      ctx.font = "bold 16px ui-sans-serif, system-ui";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "alphabetic";
+      drawOutlinedText(ctx, "+회복", x + barW - 6, y - 4, "#86efac");
+    }
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    return;
+  }
+
+  ctx.fillStyle = pulsing ? "#ecfdf5" : "#e5e7eb";
   ctx.fillText(hpText, 18, 23);
   if (pulsing) {
     ctx.fillStyle = "#86efac";
@@ -1492,22 +1669,28 @@ function drawPlayerHpBar(
 function drawBossHealthBar(
   ctx: CanvasRenderingContext2D,
   b: Boss,
-  stage: number
+  stage: number,
+  layout: HudLayout
 ): void {
-  const barW = CANVAS_W - 48;
-  const barH = 20;
-  const x = 24;
-  const y = 86;
+  const barW = CANVAS_W - layout.marginX * 2;
+  const barH = layout.bossBarH;
+  const x = layout.marginX;
+  const y = layout.bossY;
   const ratio = Math.max(0, Math.min(1, b.hp / b.maxHp));
+  const labelPad = layout.mobile ? 30 : 24;
 
   ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
-  ctx.fillRect(x - 6, y - 24, barW + 12, barH + 30);
+  ctx.fillRect(x - 6, y - labelPad, barW + 12, barH + labelPad + 6);
 
   ctx.fillStyle = "#fca5a5";
-  ctx.font = "bold 14px ui-sans-serif, system-ui";
+  ctx.font = layout.fontBossTitle;
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
-  ctx.fillText(`◆ BOSS  STAGE ${stage}`, x, y - 8);
+  if (layout.mobile) {
+    drawOutlinedText(ctx, `◆ BOSS · STAGE ${stage}`, x, y - 10, "#fca5a5", "rgba(0,0,0,0.55)", 2);
+  } else {
+    ctx.fillText(`◆ BOSS  STAGE ${stage}`, x, y - 8);
+  }
 
   ctx.fillStyle = "#1f2937";
   ctx.fillRect(x, y, barW, barH);
@@ -1515,53 +1698,61 @@ function drawBossHealthBar(
   ctx.fillStyle = grad;
   ctx.fillRect(x, y, barW * ratio, barH);
   ctx.strokeStyle = "#f8fafc";
-  ctx.lineWidth = 2;
+  ctx.lineWidth = layout.mobile ? 2.5 : 2;
   ctx.strokeRect(x + 0.5, y + 0.5, barW - 1, barH - 1);
 
-  ctx.fillStyle = "#e2e8f0";
-  ctx.font = "12px ui-monospace, monospace";
+  const hpLabel = `${Math.max(0, Math.ceil(b.hp)).toLocaleString()} / ${b.maxHp.toLocaleString()}`;
+  ctx.font = layout.fontBossHp;
   ctx.textAlign = "right";
-  ctx.fillText(
-    `${Math.max(0, Math.ceil(b.hp)).toLocaleString()} / ${b.maxHp.toLocaleString()}`,
-    x + barW,
-    y - 8
-  );
+  if (layout.mobile) {
+    drawOutlinedText(ctx, hpLabel, x + barW, y - 10, "#e2e8f0", "rgba(0,0,0,0.55)", 2);
+  } else {
+    ctx.fillStyle = "#e2e8f0";
+    ctx.fillText(hpLabel, x + barW, y - 8);
+  }
   ctx.textAlign = "left";
 }
 
 function drawPickupToast(
   ctx: CanvasRenderingContext2D,
   toast: PickupToast,
-  now: number
+  now: number,
+  layout: HudLayout
 ): void {
   const elapsed = now - toast.startAt;
   const dur = toast.until - toast.startAt;
   if (elapsed >= dur) return;
 
   const t = elapsed / dur;
-  const fadeIn = Math.min(1, elapsed / 120);
+  const fadeIn = Math.min(1, elapsed / (layout.mobile ? 150 : 120));
   const fadeOut = t > 0.55 ? 1 - (t - 0.55) / 0.45 : 1;
   const alpha = fadeIn * fadeOut;
-  const floatY = CANVAS_H * 0.36 - t * 28;
+  const floatY = CANVAS_H * layout.toastYRatio - t * (layout.mobile ? 20 : 28);
   const scale = 1 + Math.sin(elapsed / 90) * 0.04;
+  const padX = layout.mobile ? 28 : 18;
+  const padY = layout.mobile ? 30 : 22;
 
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(CANVAS_W / 2, floatY);
   ctx.scale(scale, scale);
 
-  ctx.font = "bold 26px ui-sans-serif, system-ui";
+  ctx.font = layout.toastFont;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "rgba(0,0,0,0.55)";
   const tw = ctx.measureText(toast.text).width;
-  ctx.fillRect(-tw / 2 - 18, -22, tw + 36, 44);
+  ctx.fillStyle = layout.mobile ? "rgba(2, 6, 23, 0.78)" : "rgba(0,0,0,0.55)";
+  ctx.fillRect(-tw / 2 - padX, -padY, tw + padX * 2, padY * 2);
   ctx.strokeStyle = toast.color;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(-tw / 2 - 18, -22, tw + 36, 44);
+  ctx.lineWidth = layout.mobile ? 3 : 2;
+  ctx.strokeRect(-tw / 2 - padX, -padY, tw + padX * 2, padY * 2);
 
-  ctx.fillStyle = toast.color;
-  ctx.fillText(toast.text, 0, 0);
+  if (layout.mobile) {
+    drawOutlinedText(ctx, toast.text, 0, 0, toast.color, "rgba(0,0,0,0.6)", 4);
+  } else {
+    ctx.fillStyle = toast.color;
+    ctx.fillText(toast.text, 0, 0);
+  }
 
   ctx.restore();
 }
@@ -1680,60 +1871,104 @@ function drawGame(
 
   drawTouchGuide(ctx, g);
 
-  drawPlayerHpBar(ctx, p, g.healPulse, now);
+  const layout = getHudLayout(g.hudMobile);
+  drawHudBackdrop(ctx, g, layout);
 
-  const barW = 220;
+  drawPlayerHpBar(ctx, p, g.healPulse, now, layout);
+
   const need = expToNextLevel(p.level);
   const expRatio = Math.min(1, p.exp / need);
+  const expX = layout.marginX;
+  const expY = layout.expY;
   ctx.fillStyle = "#1f2937";
-  ctx.fillRect(12, 32, barW, 12);
+  ctx.fillRect(expX, expY, layout.barW, layout.expBarH);
   ctx.fillStyle = "#6366f1";
-  ctx.fillRect(12, 32, barW * expRatio, 12);
+  ctx.fillRect(expX, expY, layout.barW * expRatio, layout.expBarH);
   ctx.strokeStyle = "#9ca3af";
-  ctx.strokeRect(12, 32, barW, 12);
-  ctx.fillStyle = "#e5e7eb";
-  ctx.font = "12px ui-monospace, monospace";
-  ctx.fillText(`EXP ${Math.floor(p.exp)}/${need}`, 18, 41);
+  ctx.lineWidth = layout.mobile ? 1.5 : 1;
+  ctx.strokeRect(expX, expY, layout.barW, layout.expBarH);
 
-  const planeLabel = p.planeType === "spread" ? "Spr" : "Lsr";
-  ctx.fillStyle = "#f9fafb";
-  ctx.font = "14px ui-monospace, monospace";
-  ctx.fillText(`St ${g.stage}`, 12, 62);
-  ctx.fillText(`Lv ${p.level}`, 56, 62);
-  ctx.fillText(`${planeLabel} W${p.weaponLevel}`, 108, 62);
-  ctx.fillText(`Score ${g.score}`, 220, 62);
-  if (p.planeType === "spread") {
-    ctx.fillText(`Shots ${Math.floor(p.missileCount)}`, 360, 62);
+  const expText = `EXP ${Math.floor(p.exp)}/${need}`;
+  ctx.font = layout.fontExp;
+  if (layout.mobile) {
+    ctx.textAlign = "right";
+    ctx.textBaseline = "alphabetic";
+    drawOutlinedText(ctx, expText, expX + layout.barW, expY - 4, "#c7d2fe", "rgba(0,0,0,0.5)", 2);
+    ctx.textAlign = "left";
   } else {
-    ctx.fillText(`ATK ${p.attack}`, 360, 62);
+    ctx.fillStyle = "#e5e7eb";
+    ctx.fillText(expText, 18, 41);
   }
 
-  ctx.fillStyle = "#64748b";
-  ctx.font = "11px ui-monospace, monospace";
-  ctx.textAlign = "center";
-  ctx.fillText(`Sky Strike · v${GAME_VERSION}`, CANVAS_W / 2, CANVAS_H - 8);
-  ctx.textAlign = "left";
+  const planeLabel = p.planeType === "spread" ? "Spr" : "Lsr";
+  const weaponStat =
+    p.planeType === "spread"
+      ? `탄 ${Math.floor(p.missileCount)}`
+      : `ATK ${p.attack}`;
 
-  drawItemLegend(ctx, p.planeType);
+  if (layout.mobile) {
+    ctx.font = layout.fontStat;
+    ctx.fillStyle = "#e2e8f0";
+    const row1 = `St.${g.stage}  ·  Lv.${p.level}  ·  ${planeLabel} W${p.weaponLevel}`;
+    drawOutlinedText(ctx, row1, layout.marginX, layout.statY1, "#e2e8f0", "rgba(0,0,0,0.45)", 2);
+
+    ctx.font = layout.fontStatBold;
+    const scoreText = `${g.score.toLocaleString()}점`;
+    drawOutlinedText(ctx, scoreText, layout.marginX, layout.statY2, "#fde047", "rgba(0,0,0,0.55)", 2);
+    ctx.textAlign = "right";
+    ctx.font = layout.fontStat;
+    drawOutlinedText(ctx, weaponStat, layout.marginX + layout.barW, layout.statY2, "#94a3b8", "rgba(0,0,0,0.45)", 2);
+    ctx.textAlign = "left";
+  } else {
+    ctx.fillStyle = "#f9fafb";
+    ctx.font = layout.fontStat;
+    ctx.fillText(`St ${g.stage}`, 12, layout.statY1);
+    ctx.fillText(`Lv ${p.level}`, 56, layout.statY1);
+    ctx.fillText(`${planeLabel} W${p.weaponLevel}`, 108, layout.statY1);
+    ctx.fillText(`Score ${g.score}`, 220, layout.statY1);
+    if (p.planeType === "spread") {
+      ctx.fillText(`Shots ${Math.floor(p.missileCount)}`, 360, layout.statY1);
+    } else {
+      ctx.fillText(`ATK ${p.attack}`, 360, layout.statY1);
+    }
+  }
+
+  if (layout.showVersion) {
+    ctx.fillStyle = "#64748b";
+    ctx.font = "11px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`Sky Strike · v${GAME_VERSION}`, CANVAS_W / 2, CANVAS_H - 8);
+    ctx.textAlign = "left";
+  }
+
+  drawItemLegend(ctx, p.planeType, layout);
 
   if (g.boss && g.boss.hp > 0) {
-    drawBossHealthBar(ctx, g.boss, g.stage);
+    drawBossHealthBar(ctx, g.boss, g.stage, layout);
   }
 
   if (g.pickupToast) {
-    drawPickupToast(ctx, g.pickupToast, now);
+    drawPickupToast(ctx, g.pickupToast, now, layout);
   }
 
   if (g.phase === "playing" && now < g.stageIntroUntil) {
     ctx.fillStyle = "rgba(0,0,0,0.45)";
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
     ctx.fillStyle = "#a7f3d0";
-    ctx.font = "bold 28px ui-sans-serif, system-ui";
+    ctx.font = layout.mobile ? "bold 40px ui-sans-serif, system-ui" : "bold 28px ui-sans-serif, system-ui";
     ctx.textAlign = "center";
-    ctx.fillText(`STAGE ${g.stage}`, CANVAS_W / 2, CANVAS_H / 2 - 8);
+    if (layout.mobile) {
+      drawOutlinedText(ctx, `STAGE ${g.stage}`, CANVAS_W / 2, CANVAS_H / 2 - 12, "#a7f3d0", "rgba(0,0,0,0.55)", 3);
+    } else {
+      ctx.fillText(`STAGE ${g.stage}`, CANVAS_W / 2, CANVAS_H / 2 - 8);
+    }
     ctx.fillStyle = "#cbd5e1";
-    ctx.font = "15px ui-monospace, monospace";
-    ctx.fillText("적이 더 강해졌습니다", CANVAS_W / 2, CANVAS_H / 2 + 24);
+    ctx.font = layout.mobile ? "20px ui-sans-serif, system-ui" : "15px ui-monospace, monospace";
+    if (layout.mobile) {
+      drawOutlinedText(ctx, "적이 더 강해졌습니다", CANVAS_W / 2, CANVAS_H / 2 + 32, "#cbd5e1", "rgba(0,0,0,0.55)", 2);
+    } else {
+      ctx.fillText("적이 더 강해졌습니다", CANVAS_W / 2, CANVAS_H / 2 + 24);
+    }
     ctx.textAlign = "left";
   }
 
@@ -1968,6 +2203,7 @@ export default function Home() {
       }
 
       const g = gameRef.current;
+      g.hudMobile = isMobileRef.current;
       if (lastTsRef.current === null) lastTsRef.current = ts;
       const rawDt = (ts - lastTsRef.current) / 1000;
       /** 탭 전환·절전 복귀 시 dt 폭주로 프레임 멈춤처럼 보이는 현상 완화 */
