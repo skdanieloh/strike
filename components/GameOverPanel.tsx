@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { GlobalRankingBoard } from "@/components/GlobalRankingBoard";
 import { formatPlayDuration } from "@/lib/format";
@@ -32,6 +32,7 @@ export function GameOverPanel({
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [cloudStatus, setCloudStatus] = useState<string | null>(null);
   const [rankRefreshKey, setRankRefreshKey] = useState(0);
+  const savedRef = useRef(false);
 
   const sharePayload = {
     score,
@@ -40,63 +41,60 @@ export function GameOverPanel({
     name: session?.user?.name ?? undefined,
   };
 
-  const persistScore = useCallback(async () => {
-    if (!session?.user) return;
-
-    const prevBest = session.user.bestScore ?? 0;
-    if (score > prevBest) {
-      await update({
-        bestScore: score,
-        bestStage: stage,
-        bestPlane: plane,
-      });
-    }
-
-    try {
-      const res = await fetch("/api/scores", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ score, stage, plane, durationMs }),
-      });
-      const data = (await res.json()) as {
-        saved?: boolean;
-        planeSaved?: boolean;
-        historySaved?: boolean;
-        cloudEnabled?: boolean;
-        rank?: number | null;
-        planeRank?: number | null;
-        message?: string;
-      };
-      if (!res.ok) {
-        setCloudStatus("클라우드 저장에 실패했습니다.");
-        return;
-      }
-      if (data.cloudEnabled === false) {
-        setCloudStatus("로그인 기록은 저장됐어요. 글로벌 랭킹은 서버 설정 후 이용 가능합니다.");
-        return;
-      }
-      if (data.historySaved) {
-        const globalText =
-          typeof data.rank === "number" ? `글로벌 #${data.rank}` : "글로벌 기록 없음";
-        const planeText =
-          typeof data.planeRank === "number" ? `${planeLabel(plane)} #${data.planeRank}` : "";
-        const savedNote =
-          data.saved || data.planeSaved
-            ? " · 최고 기록 갱신!"
-            : " · 플레이 기록 저장됨";
-        setCloudStatus(`${globalText}${planeText ? ` · ${planeText}` : ""}${savedNote}`);
-        setRankRefreshKey((k) => k + 1);
-        return;
-      }
-      setCloudStatus("플레이 기록을 저장하지 못했습니다.");
-    } catch {
-      setCloudStatus("클라우드 저장을 불러오지 못했습니다.");
-    }
-  }, [session, score, stage, plane, durationMs, update]);
-
   useEffect(() => {
-    void persistScore();
-  }, [persistScore]);
+    if (savedRef.current || !session?.user) return;
+    savedRef.current = true;
+
+    void (async () => {
+      const prevBest = session.user.bestScore ?? 0;
+      if (score > prevBest) {
+        await update({
+          bestScore: score,
+          bestStage: stage,
+          bestPlane: plane,
+        });
+      }
+
+      try {
+        const res = await fetch("/api/scores", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ score, stage, plane, durationMs }),
+        });
+        const data = (await res.json()) as {
+          saved?: boolean;
+          planeSaved?: boolean;
+          historySaved?: boolean;
+          cloudEnabled?: boolean;
+          rank?: number | null;
+          planeRank?: number | null;
+          message?: string;
+        };
+        if (!res.ok) {
+          setCloudStatus("클라우드 저장에 실패했습니다.");
+          return;
+        }
+        if (data.cloudEnabled === false) {
+          setCloudStatus("로그인 기록은 저장됐어요. 글로벌 랭킹은 서버 설정 후 이용 가능합니다.");
+          return;
+        }
+        if (data.historySaved) {
+          const globalText =
+            typeof data.rank === "number" ? `글로벌 #${data.rank}` : "글로벌 기록 없음";
+          const planeText =
+            typeof data.planeRank === "number" ? `${planeLabel(plane)} #${data.planeRank}` : "";
+          const savedNote =
+            data.saved || data.planeSaved ? " · 최고 기록 갱신!" : " · 플레이 기록 저장됨";
+          setCloudStatus(`${globalText}${planeText ? ` · ${planeText}` : ""}${savedNote}`);
+          setRankRefreshKey((k) => k + 1);
+          return;
+        }
+        setCloudStatus("플레이 기록을 저장하지 못했습니다.");
+      } catch {
+        setCloudStatus("클라우드 저장을 불러오지 못했습니다.");
+      }
+    })();
+  }, [session?.user?.id, score, stage, plane, durationMs, update]);
 
   const share = async () => {
     const url = buildShareUrl(sharePayload);

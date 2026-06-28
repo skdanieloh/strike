@@ -219,15 +219,15 @@ body {
 
 .lobby-screen__top-actions {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
 }
 
 .lobby-screen__toolbar-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
 }
 
 .lobby-screen__toolbar-btn {
@@ -295,6 +295,10 @@ body {
 }
 
 .lobby-screen__toolbar-hint {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 4;
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.92);
@@ -303,6 +307,8 @@ body {
   font-weight: 700;
   color: #94a3b8;
   white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
 }
 
 @keyframes lobby-refresh-spin {
