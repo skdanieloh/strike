@@ -8,9 +8,8 @@ import {
   type PointerEvent as ReactPointerEvent,
   type TouchEvent as ReactTouchEvent,
 } from "react";
-import { AuthBar } from "@/components/AuthBar";
 import { GameOverPanel } from "@/components/GameOverPanel";
-import { SharedResultBannerLoader } from "@/components/SharedResultBannerLoader";
+import { LobbyScreen } from "@/components/LobbyScreen";
 import type { SharePlane } from "@/lib/share";
 
 // --- Constants ---
@@ -59,7 +58,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.9.1";
+const GAME_VERSION = "0.9.2";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 
@@ -1957,13 +1956,7 @@ export default function Home() {
       const g = gameRef.current;
       const pt = canvasPointFromEvent(canvas, e.clientX, e.clientY);
 
-      if (g.phase === "select") {
-        if (trySelectPlane(g, pt.x, pt.y, performance.now())) {
-          resumeGameAudio();
-          focusGame();
-        }
-        return;
-      }
+      if (g.phase === "select") return;
 
       if (g.phase === "playing") {
         canvas.setPointerCapture(e.pointerId);
@@ -2007,6 +2000,16 @@ export default function Home() {
     [releaseTouchSteer]
   );
 
+  const handleSelectPlane = useCallback(
+    (plane: PlaneType) => {
+      beginPlaying(gameRef.current, plane, performance.now());
+      uiPhaseRef.current = "playing";
+      setUiPhase("playing");
+      focusGame();
+    },
+    [focusGame]
+  );
+
   useEffect(() => {
     const releasePad = () => {
       clearMovement(gameRef.current.padMove);
@@ -2020,13 +2023,11 @@ export default function Home() {
       const g = gameRef.current;
       if (g.phase === "select") {
         if (e.key === "1" || e.code === "Digit1") {
-          beginPlaying(g, "spread", performance.now());
-          focusGame();
+          handleSelectPlane("spread");
           return;
         }
         if (e.key === "2" || e.code === "Digit2") {
-          beginPlaying(g, "laser", performance.now());
-          focusGame();
+          handleSelectPlane("laser");
           return;
         }
       }
@@ -2057,7 +2058,7 @@ export default function Home() {
       window.removeEventListener("mouseup", releasePad);
       window.removeEventListener("blur", releaseAll);
     };
-  }, [focusGame]);
+  }, [focusGame, handleSelectPlane]);
 
   const handleRestart = useCallback(() => {
     endedRef.current = false;
@@ -2074,81 +2075,56 @@ export default function Home() {
     uiPhase === "playing"
       ? "game-page game-page--playing"
       : uiPhase === "select"
-        ? "game-page game-page--select"
+        ? "game-page game-page--lobby"
         : "game-page game-page--gameover";
 
-  const padBtn = (dir: keyof MovementInput, label: string, glyph: string, extra = "") => (
-    <button
-      type="button"
-      className={`pad-btn ${extra}`.trim()}
-      aria-label={label}
-      {...bindPadKey(dir)}
-    >
+  const inGame = uiPhase === "playing" || uiPhase === "gameover";
+
+  const padBtn = (dir: keyof MovementInput, label: string, glyph: string) => (
+    <button type="button" className="pad-btn" aria-label={label} {...bindPadKey(dir)}>
       {glyph}
     </button>
   );
 
   return (
     <main className={pageClassName} tabIndex={0} ref={mainRef}>
-      <SharedResultBannerLoader />
-      <header className="game-page__header">
-        <div className="game-page__header-row">
-          <h1>Sky Strike</h1>
-          <AuthBar compact={uiPhase === "playing"} />
-        </div>
-        <p className="game-page__hint">
-          기체 선택(1/2) · PC: WASD / 방향키 / 하단 키패드 · 자동 발사 165ms · Lv10 보스
-        </p>
-        <p className="game-page__mobile-hint">
-          {uiPhase === "select"
-            ? "기체 카드를 탭하세요"
-            : "화면 드래그 또는 ↓ 키패드로 이동 · 자동 발사"}
-        </p>
-      </header>
+      {uiPhase === "select" && (
+        <LobbyScreen version={GAME_VERSION} onSelectPlane={handleSelectPlane} />
+      )}
 
-      <div className="game-page__canvas-wrap">
-        <canvas
-          ref={canvasRef}
-          className="game-canvas"
-          width={CANVAS_W}
-          height={CANVAS_H}
-          onPointerDown={onCanvasPointerDown}
-          onPointerMove={onCanvasPointerMove}
-          onPointerUp={onCanvasPointerUp}
-          onPointerCancel={onCanvasPointerCancel}
-        />
-        {gameOver && (
-          <GameOverPanel
-            score={gameOver.score}
-            stage={gameOver.stage}
-            plane={gameOver.plane}
-            onRestart={handleRestart}
-          />
-        )}
-      </div>
+      {inGame && (
+        <>
+          <div className="game-page__canvas-wrap">
+            <canvas
+              ref={canvasRef}
+              className="game-canvas"
+              width={CANVAS_W}
+              height={CANVAS_H}
+              onPointerDown={onCanvasPointerDown}
+              onPointerMove={onCanvasPointerMove}
+              onPointerUp={onCanvasPointerUp}
+              onPointerCancel={onCanvasPointerCancel}
+            />
+            {gameOver && (
+              <GameOverPanel
+                score={gameOver.score}
+                stage={gameOver.stage}
+                plane={gameOver.plane}
+                onRestart={handleRestart}
+              />
+            )}
+          </div>
 
-      <div className="game-page__bottom">
-        <div className="mobile-pad mobile-pad--desktop" aria-label="이동 버튼 (가로)">
-          {padBtn("left", "왼쪽", "←")}
-          {padBtn("up", "위", "↑")}
-          {padBtn("down", "아래", "↓")}
-          {padBtn("right", "오른쪽", "→")}
-        </div>
-        <div className="mobile-pad mobile-pad--cross" aria-label="이동 버튼 (십자)">
-          <span className="mobile-pad__cell mobile-pad__cell--empty" aria-hidden />
-          {padBtn("up", "위", "↑", "mobile-pad__cell")}
-          <span className="mobile-pad__cell mobile-pad__cell--empty" aria-hidden />
-          {padBtn("left", "왼쪽", "←", "mobile-pad__cell")}
-          <span className="mobile-pad__cell mobile-pad__center" aria-hidden>
-            ✦
-          </span>
-          {padBtn("right", "오른쪽", "→", "mobile-pad__cell")}
-          <span className="mobile-pad__cell mobile-pad__cell--empty" aria-hidden />
-          {padBtn("down", "아래", "↓", "mobile-pad__cell")}
-          <span className="mobile-pad__cell mobile-pad__cell--empty" aria-hidden />
-        </div>
-        <p className="game-page__version">업데이트 v{GAME_VERSION}</p>
-      </div>
+          <div className="game-page__bottom">
+            <div className="mobile-pad" aria-label="이동 버튼">
+              {padBtn("left", "왼쪽", "←")}
+              {padBtn("up", "위", "↑")}
+              {padBtn("down", "아래", "↓")}
+              {padBtn("right", "오른쪽", "→")}
+            </div>
+          </div>
+        </>
+      )}
     </main>
   );
 }
