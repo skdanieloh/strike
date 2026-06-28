@@ -48,7 +48,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.6.2";
+const GAME_VERSION = "0.6.3";
 
 type MovementInput = {
   left: boolean;
@@ -109,6 +109,27 @@ function readMovementDelta(kb: MovementInput, pad: MovementInput): { mx: number;
   return { mx, my };
 }
 const STAGE_INTRO_MS = 2400;
+/** 프레임 급락·멈춤 방지용 상한 */
+const MAX_ENEMIES = 38;
+const MAX_MISSILES = 96;
+const MAX_ENEMY_BULLETS = 55;
+const MAX_ITEMS = 18;
+const MAX_SPREAD_PER_SHOT = 16;
+
+function trimEntityCounts(g: GameModel): void {
+  if (g.missiles.length > MAX_MISSILES) {
+    g.missiles.splice(0, g.missiles.length - MAX_MISSILES);
+  }
+  if (g.enemyBullets.length > MAX_ENEMY_BULLETS) {
+    g.enemyBullets.splice(0, g.enemyBullets.length - MAX_ENEMY_BULLETS);
+  }
+  if (g.items.length > MAX_ITEMS) {
+    g.items.splice(0, g.items.length - MAX_ITEMS);
+  }
+  if (g.enemies.length > MAX_ENEMIES) {
+    g.enemies.splice(0, g.enemies.length - MAX_ENEMIES);
+  }
+}
 
 const SELECT_CARD_SPREAD = { x: 72, y: 300, w: 300, h: 300 };
 const SELECT_CARD_LASER = { x: 428, y: 300, w: 300, h: 300 };
@@ -420,6 +441,7 @@ function trySelectPlane(g: GameModel, x: number, y: number, now: number): boolea
 }
 
 function spawnEnemy(g: GameModel, playerX: number): void {
+  if (g.enemies.length >= MAX_ENEMIES) return;
   const mult = getStageDifficulty(g.stage);
   const w = ENEMY_BASE_W;
   const h = ENEMY_BASE_H;
@@ -472,7 +494,11 @@ function spawnBoss(g: GameModel, now: number): void {
 }
 
 function spawnSpreadBullets(g: GameModel, p: Player): void {
-  const count = Math.max(3, Math.floor(p.missileCount));
+  const count = Math.min(
+    Math.max(3, Math.floor(p.missileCount)),
+    MAX_SPREAD_PER_SHOT
+  );
+  if (g.missiles.length >= MAX_MISSILES - count) return;
   const halfSpread =
     0.22 + p.weaponLevel * 0.065 + Math.max(0, count - 3) * 0.018;
   const baseAngle = -Math.PI / 2;
@@ -533,7 +559,7 @@ function laserHitsRect(
   rh: number
 ): boolean {
   const hitPad = laser.thickness * 0.55 + 5;
-  for (let t = 0; t <= 1; t += 0.014) {
+  for (let t = 0; t <= 1; t += 0.04) {
     const pt = pointOnQuadBezier(
       laser.sx,
       laser.sy,
@@ -700,6 +726,7 @@ function applyLevelUps(g: GameModel, now: number): void {
 }
 
 function bossShoot(g: GameModel, b: Boss, px: number, py: number, now: number): void {
+  if (g.enemyBullets.length >= MAX_ENEMY_BULLETS) return;
   const shootEvery = Math.max(380, BOSS_SHOOT_MS - (g.stage - 1) * 32);
   if (now - b.lastShot < shootEvery) return;
   b.lastShot = now;
@@ -769,7 +796,11 @@ function drawSelectScreen(ctx: CanvasRenderingContext2D, now: number): void {
     ctx.strokeStyle = accent;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.roundRect(card.x, card.y, card.w, card.h, 16);
+    if (typeof ctx.roundRect === "function") {
+      ctx.roundRect(card.x, card.y, card.w, card.h, 16);
+    } else {
+      ctx.rect(card.x, card.y, card.w, card.h);
+    }
     ctx.fill();
     ctx.stroke();
 
@@ -1006,6 +1037,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
   if (!bossActive && now >= g.stageIntroUntil && now >= g.nextEnemySpawnAt) {
     const wave = waveSizeForLevel(p.level);
     for (let i = 0; i < wave; i++) {
+      if (g.enemies.length >= MAX_ENEMIES) break;
       spawnEnemy(g, p.x + (i - (wave - 1) / 2) * 18);
     }
     const sc = spawnIntervalScale(g.stage, p.level);
@@ -1141,6 +1173,8 @@ function updateGame(g: GameModel, dt: number, now: number): void {
     g.phase = "gameover";
     g.laserVisual = null;
   }
+
+  trimEntityCounts(g);
 }
 
 function canvasPointFromEvent(
@@ -1165,44 +1199,48 @@ export default function Home() {
   const endedRef = useRef(false);
   const rafRef = useRef<number | null>(null);
   const lastTsRef = useRef<number | null>(null);
+  const tickRef = useRef<(ts: number) => void>(() => {});
 
-  const loop = useCallback((ts: number) => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) {
-      rafRef.current = requestAnimationFrame(loop);
-      return;
+  tickRef.current = (ts: number) => {
+    try {
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (!canvas || !ctx) {
+        rafRef.current = requestAnimationFrame(tickRef.current);
+        return;
+      }
+
+      const g = gameRef.current;
+      if (lastTsRef.current === null) lastTsRef.current = ts;
+      const rawDt = (ts - lastTsRef.current) / 1000;
+      /** 탭 전환·절전 복귀 시 dt 폭주로 프레임 멈춤처럼 보이는 현상 완화 */
+      const dt = rawDt > 0.2 ? 0.016 : Math.min(0.05, Math.max(0, rawDt));
+      lastTsRef.current = ts;
+
+      if (g.phase === "playing") {
+        updateGame(g, dt, ts);
+      }
+
+      if (g.phase === "gameover" && !endedRef.current) {
+        endedRef.current = true;
+        rankingRef.current = saveRankingScore(g.score);
+      }
+
+      drawGame(ctx, g, rankingRef.current, ts);
+    } catch (err) {
+      console.error("[Sky Strike] game loop error:", err);
     }
 
-    const g = gameRef.current;
-    if (lastTsRef.current === null) lastTsRef.current = ts;
-    const dt = Math.min(0.05, (ts - lastTsRef.current) / 1000);
-    lastTsRef.current = ts;
-
-    if (g.phase === "playing") {
-      updateGame(g, dt, ts);
-    }
-
-    if (g.phase === "gameover" && !endedRef.current) {
-      endedRef.current = true;
-      rankingRef.current = saveRankingScore(g.score);
-    }
-
-    drawGame(ctx, g, rankingRef.current, ts);
-
-    rafRef.current = requestAnimationFrame(loop);
-  }, []);
+    rafRef.current = requestAnimationFrame(tickRef.current);
+  };
 
   useEffect(() => {
-    endedRef.current = false;
-    rankingRef.current = null;
-    gameRef.current = createGameModel();
     lastTsRef.current = null;
-    rafRef.current = requestAnimationFrame(loop);
+    rafRef.current = requestAnimationFrame(tickRef.current);
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [loop]);
+  }, []);
 
   const bindPadKey = useCallback((dir: keyof MovementInput) => {
     const setPad = (down: boolean) => {
@@ -1289,7 +1327,10 @@ export default function Home() {
     window.addEventListener("mouseup", releasePad);
     window.addEventListener("blur", releaseAll);
     document.addEventListener("visibilitychange", () => {
-      if (document.hidden) releaseAll();
+      if (document.hidden) {
+        lastTsRef.current = null;
+        releaseAll();
+      }
     });
     return () => {
       window.removeEventListener("keydown", down);
