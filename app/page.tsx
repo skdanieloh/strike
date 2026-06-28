@@ -14,12 +14,15 @@ import type { SharePlane } from "@/lib/share";
 
 // --- Constants ---
 const CANVAS_W = 800;
-/** 세로로 긴 플레이 영역 (데스크톱/모바일 공통 논리 해상도) */
-const CANVAS_H = 920;
+/** 9:16에 가까운 세로 플레이 영역 (모바일 세로 화면 활용) */
+const CANVAS_H = 1280;
 const AUTO_FIRE_MS = 165;
 const ENEMY_SPAWN_MIN_MS = 520;
 const ENEMY_SPAWN_MAX_MS = 1050;
 const PLAYER_SPEED_PX = 440;
+/** 터치 드래그: dead zone 안이면 정지, ramp 구간에서 0→1 가속 */
+const TOUCH_DEAD_ZONE = 36;
+const TOUCH_RAMP_DIST = 100;
 const PLAYER_W = 48;
 const PLAYER_H = 40;
 const MISSILE_W = 6;
@@ -58,7 +61,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.9.2";
+const GAME_VERSION = "0.9.3";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 
@@ -119,6 +122,60 @@ function readMovementDelta(kb: MovementInput, pad: MovementInput): { mx: number;
     my *= 0.7071;
   }
   return { mx, my };
+}
+
+type TouchSteerState = {
+  active: boolean;
+  mx: number;
+  my: number;
+  fingerX: number;
+  fingerY: number;
+};
+
+const EMPTY_TOUCH_STEER: TouchSteerState = {
+  active: false,
+  mx: 0,
+  my: 0,
+  fingerX: 0,
+  fingerY: 0,
+};
+
+function clearTouchSteer(ts: TouchSteerState): void {
+  ts.active = false;
+  ts.mx = 0;
+  ts.my = 0;
+  ts.fingerX = 0;
+  ts.fingerY = 0;
+}
+
+/** 손가락 위치 → 비행기 중심 기준 아날로그 이동 벡터 (거리 비례 속도) */
+function computeTouchSteerVector(
+  fingerX: number,
+  fingerY: number,
+  cx: number,
+  cy: number
+): { mx: number; my: number } {
+  const dx = fingerX - cx;
+  const dy = fingerY - cy;
+  const dist = Math.hypot(dx, dy);
+  if (dist <= TOUCH_DEAD_ZONE) {
+    return { mx: 0, my: 0 };
+  }
+  const t = Math.min(1, (dist - TOUCH_DEAD_ZONE) / TOUCH_RAMP_DIST);
+  return { mx: (dx / dist) * t, my: (dy / dist) * t };
+}
+
+function readCombinedMovement(
+  kb: MovementInput,
+  pad: MovementInput,
+  touch: TouchSteerState
+): { mx: number; my: number } {
+  const digital = readMovementDelta(kb, pad);
+  if (!touch.active) return digital;
+  if (touch.mx !== 0 || touch.my !== 0) {
+    return { mx: touch.mx, my: touch.my };
+  }
+  return digital;
 }
 const STAGE_INTRO_MS = 2400;
 /** 프레임 급락·멈춤 방지용 상한 */
@@ -264,6 +321,7 @@ type GameModel = {
   keys: Record<string, boolean>;
   kbMove: MovementInput;
   padMove: MovementInput;
+  touchSteer: TouchSteerState;
   nextEnemySpawnAt: number;
   nextEnemySpawnDelay: number;
   lastPlayerShot: number;
@@ -388,6 +446,7 @@ function createGameModel(): GameModel {
     keys: {},
     kbMove: { ...EMPTY_MOVE },
     padMove: { ...EMPTY_MOVE },
+    touchSteer: { ...EMPTY_TOUCH_STEER },
     nextEnemySpawnAt: 0,
     nextEnemySpawnDelay: randBetween(
       ENEMY_SPAWN_MIN_MS * spawnIntervalScale(1, 1),
@@ -444,6 +503,9 @@ function beginPlaying(g: GameModel, plane: PlaneType, now: number): void {
   g.laserVisual = null;
   g.healPulse = null;
   g.pickupToast = null;
+  clearTouchSteer(g.touchSteer);
+  clearMovement(g.kbMove);
+  clearMovement(g.padMove);
   g.phase = "playing";
   g.nextEnemySpawnAt = now + 550;
   g.nextEnemySpawnDelay = randBetween(
@@ -1500,6 +1562,40 @@ function drawPickupToast(
   ctx.restore();
 }
 
+function drawTouchGuide(ctx: CanvasRenderingContext2D, g: GameModel): void {
+  const ts = g.touchSteer;
+  if (!ts.active || g.phase !== "playing") return;
+
+  const p = g.player;
+  const cx = p.x + p.w / 2;
+  const cy = p.y + p.h / 2;
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.32)";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 7]);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(ts.fingerX, ts.fingerY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = "rgba(56, 189, 248, 0.22)";
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(ts.fingerX, ts.fingerY, 13, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.18)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(cx, cy, TOUCH_DEAD_ZONE, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawGame(
   ctx: CanvasRenderingContext2D,
   g: GameModel,
@@ -1577,6 +1673,8 @@ function drawGame(
   ctx.fill();
   ctx.strokeStyle = "#e0f2fe";
   ctx.stroke();
+
+  drawTouchGuide(ctx, g);
 
   drawPlayerHpBar(ctx, p, g.healPulse, now);
 
@@ -1662,7 +1760,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
   const p = g.player;
   const canTakeDamage = now >= g.playerInvulnerableUntil;
 
-  const { mx, my } = readMovementDelta(g.kbMove, g.padMove);
+  const { mx, my } = readCombinedMovement(g.kbMove, g.padMove, g.touchSteer);
 
   p.x += mx * PLAYER_SPEED_PX * dt;
   p.y += my * PLAYER_SPEED_PX * dt;
@@ -1934,15 +2032,13 @@ export default function Home() {
     const p = g.player;
     const cx = p.x + p.w / 2;
     const cy = p.y + p.h / 2;
-    const dx = pt.x - cx;
-    const dy = pt.y - cy;
-    const dead = 16;
+    const { mx, my } = computeTouchSteerVector(pt.x, pt.y, cx, cy);
 
-    clearMovement(g.padMove);
-    if (dx < -dead) g.padMove.left = true;
-    if (dx > dead) g.padMove.right = true;
-    if (dy < -dead) g.padMove.up = true;
-    if (dy > dead) g.padMove.down = true;
+    g.touchSteer.active = true;
+    g.touchSteer.fingerX = pt.x;
+    g.touchSteer.fingerY = pt.y;
+    g.touchSteer.mx = mx;
+    g.touchSteer.my = my;
   }, []);
 
   const focusGame = useCallback(() => {
@@ -1983,7 +2079,7 @@ export default function Home() {
   const releaseTouchSteer = useCallback((pointerId: number) => {
     if (touchSteerRef.current.pointerId !== pointerId) return;
     touchSteerRef.current = { active: false, pointerId: null };
-    clearMovement(gameRef.current.padMove);
+    clearTouchSteer(gameRef.current.touchSteer);
   }, []);
 
   const onCanvasPointerUp = useCallback(
@@ -2017,6 +2113,8 @@ export default function Home() {
     const releaseAll = () => {
       clearMovement(gameRef.current.kbMove);
       clearMovement(gameRef.current.padMove);
+      clearTouchSteer(gameRef.current.touchSteer);
+      touchSteerRef.current = { active: false, pointerId: null };
     };
 
     const down = (e: KeyboardEvent) => {
@@ -2068,6 +2166,7 @@ export default function Home() {
     setUiPhase("select");
     setGameOver(null);
     touchSteerRef.current = { active: false, pointerId: null };
+    clearTouchSteer(gameRef.current.touchSteer);
     focusGame();
   }, [focusGame]);
 

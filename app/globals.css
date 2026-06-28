@@ -5,7 +5,7 @@
 /* 게임 캔버스 논리 해상도와 동기화 (page.tsx CANVAS_W / CANVAS_H) */
 :root {
   --game-canvas-w: 800;
-  --game-canvas-h: 920;
+  --game-canvas-h: 1280;
 }
 
 html {
@@ -580,6 +580,11 @@ body {
     display: none;
   }
 
+  .game-page--playing .game-page__canvas-wrap,
+  .game-page--gameover .game-page__canvas-wrap {
+    padding: 2px 0;
+  }
+
   .game-page__canvas-wrap {
     flex: 1 1 auto;
     min-height: 0;
@@ -591,9 +596,9 @@ body {
   }
 
   .game-page__canvas-wrap .game-canvas {
-    width: 100%;
+    width: auto;
+    height: 100%;
     max-width: 100%;
-    height: auto;
     max-height: 100%;
     aspect-ratio: var(--game-canvas-w) / var(--game-canvas-h);
     border: 2px solid #334155;
@@ -689,7 +694,7 @@ body {
     width: auto;
     max-width: min(100%, 860px);
     height: auto;
-    max-height: min(82dvh, calc(100dvh - 120px));
+    max-height: min(88dvh, calc(100dvh - 100px));
     aspect-ratio: var(--game-canvas-w) / var(--game-canvas-h);
     border: 2px solid #334155;
     border-radius: 8px;
