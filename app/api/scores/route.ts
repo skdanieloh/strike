@@ -1,12 +1,41 @@
 import { auth } from "@/auth";
-import { loadLeaderboard, scoresStorageReady, upsertScore } from "@/lib/scores";
+import {
+  getUserRank,
+  loadLeaderboard,
+  scoresStorageReady,
+  upsertScore,
+} from "@/lib/scores";
 import { NextResponse } from "next/server";
 
-export async function GET() {
-  const scores = await loadLeaderboard(10);
+function parseLimit(raw: string | null): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 20;
+  return Math.min(50, Math.max(1, Math.floor(n)));
+}
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const limit = parseLimit(searchParams.get("limit"));
+  const session = await auth();
+
+  const { scores, totalPlayers } = await loadLeaderboard(limit);
+  const cloudEnabled = scoresStorageReady();
+
+  let myRank: number | null = null;
+  let myRecord = null;
+
+  if (session?.user?.id && cloudEnabled) {
+    const mine = await getUserRank(session.user.id);
+    myRank = mine.rank;
+    myRecord = mine.record;
+  }
+
   return NextResponse.json({
     scores,
-    cloudEnabled: scoresStorageReady(),
+    totalPlayers,
+    cloudEnabled,
+    myRank,
+    myRecord,
   });
 }
 
@@ -47,7 +76,7 @@ export async function POST(req: Request) {
     });
   }
 
-  const saved = await upsertScore({
+  const result = await upsertScore({
     userId: session.user.id,
     userName: session.user.name ?? "Pilot",
     userImage: session.user.image ?? undefined,
@@ -58,8 +87,9 @@ export async function POST(req: Request) {
   });
 
   return NextResponse.json({
-    saved: Boolean(saved),
+    saved: result.saved,
     cloudEnabled: true,
-    score: saved,
+    rank: result.record?.rank ?? null,
+    record: result.record,
   });
 }

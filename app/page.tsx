@@ -62,7 +62,7 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.9.4";
+const GAME_VERSION = "0.10.0";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 

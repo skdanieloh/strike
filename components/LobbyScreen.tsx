@@ -1,6 +1,7 @@
 "use client";
 
 import { AuthBar } from "@/components/AuthBar";
+import { GlobalRankingBoard } from "@/components/GlobalRankingBoard";
 import { SharedResultBannerLoader } from "@/components/SharedResultBannerLoader";
 import type { SharePlane } from "@/lib/share";
 import { planeLabel } from "@/lib/share";
@@ -74,6 +75,8 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
           ))}
         </div>
       </section>
+
+      <GlobalRankingBoard limit={20} title="글로벌 랭킹" />
 
       <section className="lobby-screen__controls" aria-label="조작 안내">
         <h2 className="lobby-screen__section-title lobby-screen__section-title--sm">조작</h2>

@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { GlobalRankingBoard } from "@/components/GlobalRankingBoard";
 import {
   buildShareText,
   buildShareUrl,
   planeLabel,
   type SharePlane,
 } from "@/lib/share";
-import type { ScoreRecord } from "@/lib/scores";
 
 type GameOverPanelProps = {
   score: number;
@@ -21,8 +21,7 @@ export function GameOverPanel({ score, stage, plane, onRestart }: GameOverPanelP
   const { data: session, update } = useSession();
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [cloudStatus, setCloudStatus] = useState<string | null>(null);
-  const [leaderboard, setLeaderboard] = useState<ScoreRecord[]>([]);
-  const [cloudEnabled, setCloudEnabled] = useState(false);
+  const [rankRefreshKey, setRankRefreshKey] = useState(0);
 
   const sharePayload = {
     score,
@@ -52,6 +51,7 @@ export function GameOverPanel({ score, stage, plane, onRestart }: GameOverPanelP
       const data = (await res.json()) as {
         saved?: boolean;
         cloudEnabled?: boolean;
+        rank?: number | null;
         message?: string;
       };
       if (!res.ok) {
@@ -63,40 +63,22 @@ export function GameOverPanel({ score, stage, plane, onRestart }: GameOverPanelP
         return;
       }
       if (data.saved) {
-        setCloudStatus("글로벌 랭킹에 기록했습니다!");
+        const rankText =
+          typeof data.rank === "number" ? ` · 현재 #${data.rank}` : "";
+        setCloudStatus(`글로벌 랭킹에 기록했습니다!${rankText}`);
+        setRankRefreshKey((k) => k + 1);
       } else {
         setCloudStatus("이전 최고 기록보다 낮아 저장하지 않았습니다.");
+        setRankRefreshKey((k) => k + 1);
       }
     } catch {
-        setCloudStatus("클라우드 저장을 불러오지 못했습니다.");
+      setCloudStatus("클라우드 저장을 불러오지 못했습니다.");
     }
   }, [session, score, stage, plane, update]);
 
   useEffect(() => {
     void persistScore();
   }, [persistScore]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/scores");
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          scores?: ScoreRecord[];
-          cloudEnabled?: boolean;
-        };
-        if (cancelled) return;
-        setLeaderboard(data.scores ?? []);
-        setCloudEnabled(Boolean(data.cloudEnabled));
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [score]);
 
   const share = async () => {
     const url = buildShareUrl(sharePayload);
@@ -146,20 +128,7 @@ export function GameOverPanel({ score, stage, plane, onRestart }: GameOverPanelP
         </p>
       )}
 
-      {cloudEnabled && leaderboard.length > 0 && (
-        <div className="game-over-panel__leaderboard">
-          <p className="game-over-panel__leaderboard-title">글로벌 TOP {leaderboard.length}</p>
-          <ol>
-            {leaderboard.map((row, i) => (
-              <li key={row.userId}>
-                <span>{i + 1}.</span>
-                <span>{row.userName}</span>
-                <span>{row.score.toLocaleString()}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
+      <GlobalRankingBoard limit={10} compact title="글로벌 TOP 10" refreshKey={rankRefreshKey} />
     </div>
   );
 }
