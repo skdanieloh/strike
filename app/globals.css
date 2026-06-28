@@ -303,18 +303,19 @@ body {
 
 .lobby-screen__plane-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .lobby-plane {
   position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 4px;
   width: 100%;
-  padding: 16px 16px 14px;
+  min-height: 100%;
+  padding: 14px 12px 12px;
   border: 2px solid #334155;
   border-radius: 16px;
   background: linear-gradient(160deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.98));
@@ -361,7 +362,7 @@ body {
 }
 
 .lobby-plane__title {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 800;
 }
 
@@ -379,22 +380,49 @@ body {
 }
 
 .lobby-plane__features {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
-  line-height: 1.4;
+  gap: 3px;
+  font-size: 11px;
+  line-height: 1.35;
   color: #cbd5e1;
 }
 
+.lobby-plane__preview {
+  margin-top: auto;
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lobby-plane__preview-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.lobby-plane__preview-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 168 / 76;
+  border-radius: 8px;
+  border: 1px solid rgba(51, 65, 85, 0.85);
+  background: rgba(2, 6, 23, 0.45);
+}
+
 .lobby-plane__cta {
-  margin-top: 10px;
-  font-size: 13px;
+  margin-top: 8px;
+  font-size: 12px;
   font-weight: 700;
   color: #86efac;
+  text-align: center;
 }
 
 .lobby-screen__control-list {
@@ -774,10 +802,6 @@ body {
     padding-top: env(safe-area-inset-top, 0px);
   }
 
-  .lobby-screen__plane-grid {
-    grid-template-columns: 1fr;
-  }
-
   .auth-bar__name {
     max-width: 120px;
   }
@@ -1072,7 +1096,27 @@ body {
   }
 
   .lobby-screen__plane-grid {
-    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+
+  .lobby-plane {
+    padding: 16px 16px 14px;
+  }
+
+  .lobby-plane__title {
+    font-size: 22px;
+  }
+
+  .lobby-plane__features {
+    font-size: 13px;
+    gap: 4px;
+    line-height: 1.4;
+  }
+
+  .lobby-plane__cta {
+    margin-top: 10px;
+    font-size: 13px;
+    text-align: left;
   }
 
   .game-page--playing,

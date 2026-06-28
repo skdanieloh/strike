@@ -6,6 +6,7 @@ import { RankingModal } from "@/components/RankingModal";
 import { SharedResultBannerLoader } from "@/components/SharedResultBannerLoader";
 import { UserProfilePanel } from "@/components/UserProfilePanel";
 import type { SharePlane } from "@/lib/share";
+import { PlaneWeaponPreview } from "@/components/PlaneWeaponPreview";
 import { planeLabel } from "@/lib/share";
 
 type LobbyScreenProps = {
@@ -85,6 +86,10 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
                   <li key={line}>{line}</li>
                 ))}
               </ul>
+              <div className="lobby-plane__preview">
+                <span className="lobby-plane__preview-label">발사 형상</span>
+                <PlaneWeaponPreview plane={plane.id} />
+              </div>
               <span className="lobby-plane__cta">출격하기 →</span>
             </button>
           ))}
@@ -100,7 +105,7 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
           </li>
           <li>
             <span className="lobby-screen__control-key">모바일</span>
-            하단 조이스틱 · 💣 폭탄(×100 ATK)
+            하단 조이스틱 · 💣 폭탄(×200 ATK)
           </li>
           <li>
             <span className="lobby-screen__control-key">공통</span>

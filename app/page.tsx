@@ -64,11 +64,11 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.11.3";
+const GAME_VERSION = "0.11.5";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 const MOBILE_PICKUP_TOAST_MS = 1300;
-const BOMB_ATTACK_MULT = 100;
+const BOMB_ATTACK_MULT = 200;
 const STARTING_BOMBS = 3;
 const STAGE_BOMB_DROP_MIN = 3;
 const STAGE_BOMB_DROP_MAX = 10;
