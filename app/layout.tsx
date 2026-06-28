@@ -5,6 +5,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Sky Strike",
   description: "2D airplane shooter — 점수를 공유하고 글로벌 랭킹에 도전하세요",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Sky Strike",
+  },
   openGraph: {
     title: "Sky Strike",
     description: "2D airplane shooter",
@@ -15,6 +20,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   themeColor: "#0a0e14",
   /** 노치·홈 인디케이터 영역까지 배경 확장 (safe-area와 함께 사용) */
   viewportFit: "cover",

@@ -2,13 +2,17 @@
 
 import { signIn, signOut, useSession } from "next-auth/react";
 
-export function AuthBar() {
+type AuthBarProps = {
+  compact?: boolean;
+};
+
+export function AuthBar({ compact = false }: AuthBarProps) {
   const { data: session, status } = useSession();
   const loading = status === "loading";
 
   if (loading) {
     return (
-      <div className="auth-bar">
+      <div className={`auth-bar${compact ? " auth-bar--compact" : ""}`}>
         <span className="auth-bar__status">로그인 확인 중…</span>
       </div>
     );
@@ -16,14 +20,14 @@ export function AuthBar() {
 
   if (!session?.user) {
     return (
-      <div className="auth-bar">
+      <div className={`auth-bar${compact ? " auth-bar--compact" : ""}`}>
         <button
           type="button"
           className="auth-bar__google"
           onClick={() => signIn("google")}
         >
           <GoogleIcon />
-          Google로 로그인
+          {compact ? "로그인" : "Google로 로그인"}
         </button>
       </div>
     );
@@ -31,7 +35,7 @@ export function AuthBar() {
 
   const { user } = session;
   return (
-    <div className="auth-bar">
+    <div className={`auth-bar${compact ? " auth-bar--compact" : ""}`}>
       <div className="auth-bar__profile">
         {user.image ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -47,14 +51,20 @@ export function AuthBar() {
             ✈
           </span>
         )}
-        <span className="auth-bar__name">{user.name ?? "Pilot"}</span>
-        {typeof user.bestScore === "number" && (
-          <span className="auth-bar__best">최고 {user.bestScore.toLocaleString()}점</span>
+        {!compact && (
+          <>
+            <span className="auth-bar__name">{user.name ?? "Pilot"}</span>
+            {typeof user.bestScore === "number" && (
+              <span className="auth-bar__best">최고 {user.bestScore.toLocaleString()}점</span>
+            )}
+          </>
         )}
       </div>
-      <button type="button" className="auth-bar__logout" onClick={() => signOut()}>
-        로그아웃
-      </button>
+      {!compact && (
+        <button type="button" className="auth-bar__logout" onClick={() => signOut()}>
+          로그아웃
+        </button>
+      )}
     </div>
   );
 }

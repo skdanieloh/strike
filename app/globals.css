@@ -42,7 +42,7 @@ body {
   background: #0b1220;
 }
 
-/* 가로 한 줄 키패드 */
+/* 가로 한 줄 키패드 (데스크톱) */
 .mobile-pad {
   display: flex;
   flex-direction: row;
@@ -52,6 +52,24 @@ body {
   gap: 10px;
   width: 100%;
   max-width: min(400px, 100%);
+}
+
+.mobile-pad--cross {
+  display: none;
+}
+
+.mobile-pad__cell--empty {
+  pointer-events: none;
+}
+
+.mobile-pad__center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #475569;
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .pad-btn {
@@ -172,6 +190,21 @@ body {
 .auth-bar__logout:hover {
   color: #e2e8f0;
   border-color: #475569;
+}
+
+.auth-bar--compact .auth-bar__google {
+  padding: 6px 10px;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.auth-bar--compact .auth-bar__avatar {
+  width: 24px;
+  height: 24px;
+}
+
+.game-page__mobile-hint {
+  display: none;
 }
 
 /* ========== 공유된 결과 배너 ========== */
@@ -372,6 +405,83 @@ body {
 
   .game-page__hint {
     display: none;
+  }
+
+  .game-page__mobile-hint {
+    display: block;
+    margin: 2px 0 0;
+    font-size: 12px;
+    opacity: 0.75;
+    line-height: 1.35;
+  }
+
+  .game-page--playing .game-page__header {
+    padding: 4px 8px 2px;
+  }
+
+  .game-page--playing .game-page__header-row {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .game-page--playing .game-page__header h1 {
+    font-size: 15px;
+  }
+
+  .game-page--playing .game-page__mobile-hint {
+    font-size: 11px;
+    margin: 0;
+    opacity: 0.65;
+  }
+
+  .game-page--select .game-page__mobile-hint {
+    color: #93c5fd;
+  }
+
+  .mobile-pad--desktop {
+    display: none;
+  }
+
+  .mobile-pad--cross {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 6px;
+    max-width: min(252px, 74vw);
+    width: 100%;
+  }
+
+  .mobile-pad--cross .pad-btn {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    min-height: 56px;
+    aspect-ratio: 1;
+    font-size: 24px;
+    border-radius: 14px;
+  }
+
+  .game-over-panel {
+    justify-content: flex-start;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 14px 12px max(14px, env(safe-area-inset-bottom));
+  }
+
+  .game-over-panel__actions {
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .game-over-panel__btn {
+    flex: 1 1 130px;
+    min-height: 48px;
+    padding: 12px 18px;
+    font-size: 15px;
   }
 
   .game-page__canvas-wrap {
