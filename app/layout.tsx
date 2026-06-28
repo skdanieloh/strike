@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Sky Strike",
-  description: "2D airplane shooter — 점수를 공유하고 글로벌 랭킹에 도전하세요",
+  description: "KF-15 출격! 2D 슈팅 — 콤보·보너스 미션·글로벌 랭킹",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "Sky Strike",
-    description: "2D airplane shooter",
+    description: "KF-15 2D airplane shooter",
     type: "website",
   },
 };

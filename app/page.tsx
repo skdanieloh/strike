@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type TouchEvent as ReactTouchEvent,
 } from "react";
+import { ActiveSkillButton } from "@/components/ActiveSkillButton";
 import { BombButton } from "@/components/BombButton";
 import { GameOverPanel } from "@/components/GameOverPanel";
 import { ItemLegendDock } from "@/components/ItemLegendDock";
@@ -64,10 +65,17 @@ const BOSS_FIRST_SHOT_DELAY_MS = 750;
 const ENEMY_BULLET_ARM_MS = 180;
 const BOSS_CONTACT_DPS_SCALE = 0.42;
 /** 빌드/배포 시 구분용 버전 (화면 하단 표시) */
-const GAME_VERSION = "0.11.7";
+const GAME_VERSION = "0.12.0";
 const HEAL_PULSE_MS = 750;
 const PICKUP_TOAST_MS = 1000;
 const MOBILE_PICKUP_TOAST_MS = 1300;
+const COMBO_WINDOW_MS = 2400;
+const COMBO_MULT_STEP = 0.12;
+const COMBO_MULT_CAP = 3;
+const STAGE_OBJECTIVE_BONUS_BASE = 380;
+const STAGE_FAST_CLEAR_MS = 90_000;
+const ACTIVE_SKILL_COOLDOWN_MS = 16_000;
+const ACTIVE_SKILL_DURATION_MS = 2800;
 const BOMB_ATTACK_MULT = 200;
 const STARTING_BOMBS = 3;
 const STAGE_BOMB_DROP_MIN = 3;
@@ -290,6 +298,15 @@ type Missile = {
   damage: number;
   vx: number;
   vy: number;
+  pierce?: boolean;
+};
+
+type StageObjectiveId = "no_hit_preboss" | "no_bomb_boss" | "fast_clear";
+
+type StageObjective = {
+  id: StageObjectiveId;
+  label: string;
+  shortLabel: string;
 };
 
 type EnemyBullet = {
@@ -381,7 +398,24 @@ type GameModel = {
   stageLifeDropped: boolean;
   /** 생명 아이템 드랍 예정 시각(ms) */
   nextLifeDropAt: number;
+  comboCount: number;
+  comboExpiresAt: number;
+  comboDisplayUntil: number;
+  bestCombo: number;
+  stageObjective: StageObjective | null;
+  stageObjectiveCompleted: boolean;
+  stageDamaged: boolean;
+  stageBombsUsed: number;
+  stageStartedAt: number;
+  activeSkillUntil: number;
+  activeSkillCooldownUntil: number;
 };
+
+const STAGE_OBJECTIVES: StageObjective[] = [
+  { id: "no_hit_preboss", label: "보스전까지 무피격", shortLabel: "무피격" },
+  { id: "no_bomb_boss", label: "폭탄 없이 보스 격파", shortLabel: "무분탄" },
+  { id: "fast_clear", label: "90초 안에 보스 격파", shortLabel: "속전" },
+];
 
 // --- Pure helpers ---
 function expToNextLevel(level: number): number {
@@ -467,6 +501,75 @@ function visualSpreadBulletDimensions(weaponLevel: number): { w: number; h: numb
   return { w: capW * scale, h: capH * scale };
 }
 
+function comboScoreMultiplier(combo: number): number {
+  if (combo <= 1) return 1;
+  return Math.min(COMBO_MULT_CAP, 1 + (combo - 1) * COMBO_MULT_STEP);
+}
+
+function registerComboKill(g: GameModel, now: number): number {
+  if (now <= g.comboExpiresAt) {
+    g.comboCount += 1;
+  } else {
+    g.comboCount = 1;
+  }
+  g.comboExpiresAt = now + COMBO_WINDOW_MS;
+  g.comboDisplayUntil = now + 900;
+  if (g.comboCount > g.bestCombo) g.bestCombo = g.comboCount;
+  return Math.round(SCORE_ENEMY * comboScoreMultiplier(g.comboCount));
+}
+
+function breakCombo(g: GameModel): void {
+  g.comboCount = 0;
+  g.comboExpiresAt = 0;
+}
+
+function notePlayerDamage(g: GameModel, damage: number): void {
+  if (damage <= 0) return;
+  g.stageDamaged = true;
+  breakCombo(g);
+}
+
+function isActiveSkillLive(g: GameModel, now: number): boolean {
+  return now < g.activeSkillUntil;
+}
+
+function pickStageObjective(): StageObjective {
+  return STAGE_OBJECTIVES[Math.floor(Math.random() * STAGE_OBJECTIVES.length)];
+}
+
+function resetStageObjectiveState(g: GameModel, now: number): void {
+  g.stageObjective = pickStageObjective();
+  g.stageObjectiveCompleted = false;
+  g.stageDamaged = false;
+  g.stageBombsUsed = 0;
+  g.stageStartedAt = now;
+}
+
+function isStageObjectiveMet(g: GameModel, now: number): boolean {
+  const obj = g.stageObjective;
+  if (!obj) return false;
+  if (obj.id === "no_hit_preboss") return !g.stageDamaged;
+  if (obj.id === "no_bomb_boss") return g.stageBombsUsed === 0;
+  return now - g.stageStartedAt <= STAGE_FAST_CLEAR_MS;
+}
+
+function awardStageObjectiveBonus(g: GameModel, now: number): void {
+  if (g.stageObjectiveCompleted || !g.stageObjective) return;
+  if (!isStageObjectiveMet(g, now)) return;
+
+  g.stageObjectiveCompleted = true;
+  const bonus = STAGE_OBJECTIVE_BONUS_BASE * g.stage;
+  g.score += bonus;
+  g.bombs += 1;
+  g.pickupToast = {
+    text: `보너스 +${bonus.toLocaleString()} · 폭탄+1`,
+    color: "#fde047",
+    startAt: now,
+    until: now + (g.hudMobile ? MOBILE_PICKUP_TOAST_MS + 400 : PICKUP_TOAST_MS + 400),
+  };
+  playItemPickupSound("power");
+}
+
 function saveRankingScore(score: number): number[] {
   const prev = loadRanking();
   const merged = [...prev, score].sort((a, b) => b - a);
@@ -546,6 +649,17 @@ function createGameModel(): GameModel {
     stageLifeWillDrop: false,
     stageLifeDropped: false,
     nextLifeDropAt: Number.POSITIVE_INFINITY,
+    comboCount: 0,
+    comboExpiresAt: 0,
+    comboDisplayUntil: 0,
+    bestCombo: 0,
+    stageObjective: null,
+    stageObjectiveCompleted: false,
+    stageDamaged: false,
+    stageBombsUsed: 0,
+    stageStartedAt: 0,
+    activeSkillUntil: 0,
+    activeSkillCooldownUntil: 0,
   };
 }
 
@@ -601,6 +715,13 @@ function beginPlaying(g: GameModel, plane: PlaneType, now: number): void {
   g.bombCooldownUntil = 0;
   g.bombFlashUntil = 0;
   g.extraLives = 0;
+  g.comboCount = 0;
+  g.comboExpiresAt = 0;
+  g.comboDisplayUntil = 0;
+  g.bestCombo = 0;
+  g.activeSkillUntil = 0;
+  g.activeSkillCooldownUntil = 0;
+  resetStageObjectiveState(g, now);
   initStageBombDrops(g, now);
   initStageLifeDrop(g, now);
 }
@@ -749,6 +870,7 @@ function tryConsumeExtraLife(g: GameModel, now: number): boolean {
   g.missiles = [];
   g.laserVisual = null;
   g.playerInvulnerableUntil = now + RESPAWN_INVULN_MS;
+  breakCombo(g);
   g.pickupToast = {
     text: "부활!",
     color: "#f472b6",
@@ -793,16 +915,20 @@ function spawnSpreadBullets(g: GameModel, p: Player, now: number): void {
     MAX_SPREAD_PER_SHOT
   );
   if (g.missiles.length >= MAX_MISSILES - count) return;
+  const skillActive = isActiveSkillLive(g, now);
   const visWl = visualWeaponLevel(p.weaponLevel);
   const visCount = Math.min(count, VISUAL_SPREAD_COUNT_CAP);
-  const halfSpread = Math.min(
+  let halfSpread = Math.min(
     VISUAL_SPREAD_HALF_CAP,
     0.22 + visWl * 0.065 + Math.max(0, visCount - 3) * 0.016
   );
+  if (skillActive) halfSpread *= 0.5;
   const baseAngle = -Math.PI / 2;
-  const speed = MISSILE_SPEED * (1 + p.weaponLevel * 0.05);
+  const speed = MISSILE_SPEED * (1 + p.weaponLevel * 0.05) * (skillActive ? 1.18 : 1);
   const baseX = p.x + p.w / 2 - MISSILE_W / 2;
   const baseY = p.y - MISSILE_H;
+  const baseDamage = Math.round(p.attack * (1 + p.weaponLevel * 0.12));
+  const damage = skillActive ? Math.round(baseDamage * 1.35) : baseDamage;
 
   for (let i = 0; i < count; i++) {
     const t = count === 1 ? 0 : i / (count - 1);
@@ -813,9 +939,10 @@ function spawnSpreadBullets(g: GameModel, p: Player, now: number): void {
       y: baseY,
       w: MISSILE_W,
       h: MISSILE_H,
-      damage: Math.round(p.attack * (1 + p.weaponLevel * 0.12)),
+      damage,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
+      pierce: skillActive,
     });
   }
   playSpreadShotSound(now);
@@ -910,14 +1037,74 @@ function findLaserTarget(
 function killEnemy(g: GameModel, e: Enemy, idx: number, now: number): void {
   playEnemyKillSound(now);
   const p = g.player;
-  g.score += SCORE_ENEMY;
+  g.score += registerComboKill(g, now);
   p.exp += EXP_PER_KILL;
   tryDropItem(g, e.x + e.w / 2, e.y + e.h / 2);
   g.enemies.splice(idx, 1);
   applyLevelUps(g, now);
 }
 
+function defeatBoss(g: GameModel, now: number): void {
+  awardStageObjectiveBonus(g, now);
+  g.score += SCORE_BOSS;
+  advanceStageAfterBoss(g, now);
+}
+
+function updateActiveLaserWeapon(g: GameModel, p: Player, dt: number, now: number): void {
+  playLaserPulseSound(now);
+
+  const sx = p.x + p.w / 2;
+  const sy = p.y + 4;
+  const ex = sx;
+  const ey = 16;
+  const cx = sx;
+  const cy = (sy + ey) / 2;
+  const hitThickness = 10 + p.weaponLevel * 2.2;
+  const drawThickness = visualLaserDrawThickness(p.weaponLevel) * 1.4;
+  const dps = p.attack * (4.5 + p.weaponLevel * 0.72);
+  const damage = dps * dt;
+
+  g.laserVisual = {
+    sx,
+    sy,
+    cx,
+    cy,
+    ex,
+    ey,
+    thickness: hitThickness,
+    drawThickness,
+  };
+
+  for (let i = g.enemies.length - 1; i >= 0; i--) {
+    const e = g.enemies[i];
+    if (!laserHitsRect(g.laserVisual, e.x, e.y, e.w, e.h)) continue;
+    e.hp -= damage;
+    if (e.hp <= 0) {
+      killEnemy(g, e, i, now);
+    } else {
+      playEnemyHitSound(now, false);
+    }
+  }
+
+  if (g.boss && g.boss.hp > 0) {
+    const b = g.boss;
+    if (laserHitsRect(g.laserVisual, b.x, b.y, b.w, b.h)) {
+      b.hp -= damage;
+      if (b.hp <= 0) {
+        defeatBoss(g, now);
+      } else {
+        playBossHitSound(now);
+      }
+    }
+  }
+}
+
 function updateLaserWeapon(g: GameModel, p: Player, dt: number, now: number): void {
+  if (isActiveSkillLive(g, now)) {
+    updateActiveLaserWeapon(g, p, dt, now);
+    return;
+  }
+
   playLaserPulseSound(now);
 
   const sx = p.x + p.w / 2;
@@ -958,13 +1145,32 @@ function updateLaserWeapon(g: GameModel, p: Player, dt: number, now: number): vo
     if (laserHitsRect(g.laserVisual, b.x, b.y, b.w, b.h)) {
       b.hp -= damage;
       if (b.hp <= 0) {
-        g.score += SCORE_BOSS;
-        advanceStageAfterBoss(g, now);
+        defeatBoss(g, now);
       } else {
         playBossHitSound(now);
       }
     }
   }
+}
+
+function useActiveSkill(g: GameModel, now: number): boolean {
+  if (g.phase !== "playing") return false;
+  if (now < g.activeSkillCooldownUntil) return false;
+  if (isActiveSkillLive(g, now)) return false;
+
+  resumeGameAudio();
+  g.activeSkillUntil = now + ACTIVE_SKILL_DURATION_MS;
+  g.activeSkillCooldownUntil = now + ACTIVE_SKILL_COOLDOWN_MS;
+  const p = g.player;
+  const label = p.planeType === "spread" ? "관통탄!" : "관통빔!";
+  g.pickupToast = {
+    text: label,
+    color: p.planeType === "spread" ? "#38bdf8" : "#c084fc",
+    startAt: now,
+    until: now + (g.hudMobile ? MOBILE_PICKUP_TOAST_MS : PICKUP_TOAST_MS),
+  };
+  playStageAdvanceSound();
+  return true;
 }
 
 let sfxAudioCtx: AudioContext | null = null;
@@ -1335,6 +1541,7 @@ function advanceStageAfterBoss(g: GameModel, now: number): void {
   g.stageIntroUntil = now + STAGE_INTRO_MS;
   g.playerInvulnerableUntil = Math.max(g.playerInvulnerableUntil, now + 1600);
   g.phase = "playing";
+  resetStageObjectiveState(g, now);
   initStageBombDrops(g, now);
   initStageLifeDrop(g, now);
 }
@@ -1527,6 +1734,7 @@ function useBomb(g: GameModel, now: number): boolean {
   const p = g.player;
   const damage = Math.round(p.attack * BOMB_ATTACK_MULT);
   g.bombs -= 1;
+  g.stageBombsUsed += 1;
   g.bombCooldownUntil = now + BOMB_COOLDOWN_MS;
   g.bombFlashUntil = now + BOMB_FLASH_MS;
   g.enemyBullets = [];
@@ -1545,8 +1753,7 @@ function useBomb(g: GameModel, now: number): boolean {
     const b = g.boss;
     b.hp -= damage;
     if (b.hp <= 0) {
-      g.score += SCORE_BOSS;
-      advanceStageAfterBoss(g, now);
+      defeatBoss(g, now);
     } else {
       playBossHitSound(now);
     }
@@ -1979,6 +2186,60 @@ function strokeRoundRect(
   ctx.stroke();
 }
 
+function drawComboBadge(
+  ctx: CanvasRenderingContext2D,
+  g: GameModel,
+  now: number,
+  layout: HudLayout
+): void {
+  if (g.comboCount < 2 || now > g.comboExpiresAt) return;
+
+  const mult = comboScoreMultiplier(g.comboCount);
+  const text = `${g.comboCount} COMBO ×${mult.toFixed(1)}`;
+  const pulse = now < g.comboDisplayUntil ? 1 + Math.sin(now / 60) * 0.06 : 1;
+  ctx.save();
+  ctx.font = layout.mobile ? "bold 18px ui-sans-serif, system-ui" : "bold 16px ui-monospace, monospace";
+  const tw = ctx.measureText(text).width;
+  const x = layout.mobile ? CANVAS_W / 2 : CANVAS_W - tw - 18;
+  const y = layout.mobile ? layout.statY1 + 28 : layout.statY1 + 18;
+  ctx.translate(x + tw / 2, y);
+  ctx.scale(pulse, pulse);
+  drawOutlinedText(ctx, text, -tw / 2, 0, "#fde047", "rgba(0,0,0,0.55)", 2);
+  ctx.restore();
+}
+
+function drawStageObjectiveHud(
+  ctx: CanvasRenderingContext2D,
+  g: GameModel,
+  layout: HudLayout
+): void {
+  const obj = g.stageObjective;
+  if (!obj || g.stageObjectiveCompleted) return;
+
+  const label = `보너스: ${obj.shortLabel}`;
+  ctx.font = layout.mobile ? "bold 12px ui-sans-serif, system-ui" : "11px ui-monospace, monospace";
+  const tw = ctx.measureText(label).width;
+  const padX = 8;
+  const bh = layout.mobile ? 20 : 18;
+  const bw = tw + padX * 2;
+  const bx = layout.mobile ? layout.marginX : CANVAS_W - bw - 14;
+  const by = layout.mobile ? layout.statY1 + 46 : layout.statY1 + 36;
+
+  fillRoundRect(ctx, bx, by, bw, bh, bh / 2);
+  ctx.strokeStyle = "rgba(253, 224, 71, 0.35)";
+  ctx.lineWidth = 1;
+  strokeRoundRect(ctx, bx + 0.5, by + 0.5, bw - 1, bh - 1, bh / 2);
+  drawOutlinedText(
+    ctx,
+    label,
+    bx + padX,
+    by + bh / 2 + (layout.mobile ? 4 : 3),
+    "#fde68a",
+    "rgba(0,0,0,0.45)",
+    2
+  );
+}
+
 function drawMobileScoreBadge(
   ctx: CanvasRenderingContext2D,
   score: number,
@@ -2325,8 +2586,8 @@ function drawGame(
   }
 
   const { w: bulletW, h: bulletH } = visualSpreadBulletDimensions(p.weaponLevel);
-  ctx.fillStyle = "#93c5fd";
   for (const m of g.missiles) {
+    ctx.fillStyle = m.pierce ? "#e0f2fe" : "#93c5fd";
     const bx = m.x + m.w / 2 - bulletW / 2;
     const by = m.y + m.h / 2 - bulletH / 2;
     ctx.fillRect(bx, by, bulletW, bulletH);
@@ -2346,6 +2607,16 @@ function drawGame(
   ctx.fill();
   ctx.strokeStyle = "#e0f2fe";
   ctx.stroke();
+
+  if (isActiveSkillLive(g, now)) {
+    ctx.save();
+    ctx.strokeStyle = p.planeType === "laser" ? "rgba(192, 132, 252, 0.55)" : "rgba(56, 189, 248, 0.55)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(p.x + p.w / 2, p.y + p.h / 2, p.w * 0.72, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   drawTouchGuide(ctx, g);
 
@@ -2433,6 +2704,8 @@ function drawGame(
   }
 
   drawItemLegend(ctx, p.planeType, layout);
+  drawComboBadge(ctx, g, now, layout);
+  drawStageObjectiveHud(ctx, g, layout);
 
   if (g.boss && g.boss.hp > 0) {
     drawBossHealthBar(ctx, g.boss, g.stage, layout);
@@ -2455,12 +2728,18 @@ function drawGame(
     } else {
       ctx.fillText(`STAGE ${g.stage}`, CANVAS_W / 2, CANVAS_H / 2 - 8);
     }
+    const objLine = g.stageObjective ? `보너스: ${g.stageObjective.label}` : "적이 더 강해졌습니다";
     ctx.fillStyle = "#cbd5e1";
-    ctx.font = layout.mobile ? "20px ui-sans-serif, system-ui" : "15px ui-monospace, monospace";
+    ctx.font = layout.mobile ? "18px ui-sans-serif, system-ui" : "14px ui-monospace, monospace";
     if (layout.mobile) {
-      drawOutlinedText(ctx, "적이 더 강해졌습니다", CANVAS_W / 2, CANVAS_H / 2 + 32, "#cbd5e1", "rgba(0,0,0,0.55)", 2);
+      drawOutlinedText(ctx, objLine, CANVAS_W / 2, CANVAS_H / 2 + 28, "#fde68a", "rgba(0,0,0,0.55)", 2);
+      drawOutlinedText(ctx, "적이 더 강해졌습니다", CANVAS_W / 2, CANVAS_H / 2 + 58, "#cbd5e1", "rgba(0,0,0,0.55)", 2);
     } else {
-      ctx.fillText("적이 더 강해졌습니다", CANVAS_W / 2, CANVAS_H / 2 + 24);
+      ctx.fillStyle = "#fde68a";
+      ctx.fillText(objLine, CANVAS_W / 2, CANVAS_H / 2 + 20);
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = "15px ui-monospace, monospace";
+      ctx.fillText("적이 더 강해졌습니다", CANVAS_W / 2, CANVAS_H / 2 + 44);
     }
     ctx.textAlign = "left";
   }
@@ -2572,7 +2851,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
       const e = g.enemies[i];
       if (!rectsOverlap(m.x, m.y, m.w, m.h, e.x, e.y, e.w, e.h)) continue;
       e.hp -= m.damage;
-      m.y = -9999;
+      if (!m.pierce) m.y = -9999;
       if (e.hp <= 0) {
         killEnemy(g, e, i, now);
       } else {
@@ -2589,10 +2868,9 @@ function updateGame(g: GameModel, dt: number, now: number): void {
       if (m.y < -400) continue;
       if (!rectsOverlap(m.x, m.y, m.w, m.h, b.x, b.y, b.w, b.h)) continue;
       b.hp -= m.damage;
-      m.y = -9999;
+      if (!m.pierce) m.y = -9999;
       if (b.hp <= 0) {
-        g.score += SCORE_BOSS;
-        advanceStageAfterBoss(g, now);
+        defeatBoss(g, now);
         return;
       }
       playBossHitSound(now);
@@ -2603,7 +2881,9 @@ function updateGame(g: GameModel, dt: number, now: number): void {
   if (canTakeDamage) {
     for (const e of g.enemies) {
       if (!rectsOverlap(p.x, p.y, p.w, p.h, e.x, e.y, e.w, e.h)) continue;
-      p.hp -= e.damage * dt;
+      const dmg = e.damage * dt;
+      if (dmg > 0) notePlayerDamage(g, dmg);
+      p.hp -= dmg;
       playPlayerContactSound(now);
     }
   }
@@ -2612,6 +2892,7 @@ function updateGame(g: GameModel, dt: number, now: number): void {
     if (now < eb.armedAfter) continue;
     if (!canTakeDamage) continue;
     if (!rectsOverlap(p.x, p.y, p.w, p.h, eb.x, eb.y, eb.w, eb.h)) continue;
+    notePlayerDamage(g, eb.damage);
     p.hp -= eb.damage;
     playPlayerHitSound(now);
     eb.y = CANVAS_H + 999;
@@ -2628,7 +2909,9 @@ function updateGame(g: GameModel, dt: number, now: number): void {
   if (canTakeDamage && g.boss && g.boss.hp > 0) {
     const b = g.boss;
     if (rectsOverlap(p.x, p.y, p.w, p.h, b.x, b.y, b.w, b.h)) {
-      p.hp -= b.damage * BOSS_CONTACT_DPS_SCALE * dt;
+      const dmg = b.damage * BOSS_CONTACT_DPS_SCALE * dt;
+      if (dmg > 0) notePlayerDamage(g, dmg);
+      p.hp -= dmg;
       playPlayerContactSound(now);
     }
   }
@@ -2677,6 +2960,10 @@ export default function Home() {
   const [playingPlane, setPlayingPlane] = useState<SharePlane>("spread");
   const [bombCount, setBombCount] = useState(STARTING_BOMBS);
   const bombsRef = useRef(STARTING_BOMBS);
+  const [skillReady, setSkillReady] = useState(true);
+  const [skillActive, setSkillActive] = useState(false);
+  const [skillCooldownSec, setSkillCooldownSec] = useState(0);
+  const skillUiRef = useRef({ ready: true, active: false, cooldownSec: 0 });
   const touchSteerRef = useRef<{ active: boolean; pointerId: number | null }>({
     active: false,
     pointerId: null,
@@ -2718,6 +3005,30 @@ export default function Home() {
       if (g.bombs !== bombsRef.current) {
         bombsRef.current = g.bombs;
         queueMicrotask(() => setBombCount(g.bombs));
+      }
+
+      const now = ts;
+      const nextSkillReady = now >= g.activeSkillCooldownUntil;
+      const nextSkillActive = isActiveSkillLive(g, now);
+      const nextSkillCooldownSec = nextSkillReady
+        ? 0
+        : Math.max(1, Math.ceil((g.activeSkillCooldownUntil - now) / 1000));
+      const skillUi = skillUiRef.current;
+      if (
+        nextSkillReady !== skillUi.ready ||
+        nextSkillActive !== skillUi.active ||
+        nextSkillCooldownSec !== skillUi.cooldownSec
+      ) {
+        skillUiRef.current = {
+          ready: nextSkillReady,
+          active: nextSkillActive,
+          cooldownSec: nextSkillCooldownSec,
+        };
+        queueMicrotask(() => {
+          setSkillReady(nextSkillReady);
+          setSkillActive(nextSkillActive);
+          setSkillCooldownSec(nextSkillCooldownSec);
+        });
       }
 
       if (g.phase !== uiPhaseRef.current) {
@@ -2806,6 +3117,13 @@ export default function Home() {
     mainRef.current?.focus({ preventScroll: true });
   }, []);
 
+  const applyActiveSkill = useCallback(() => {
+    const g = gameRef.current;
+    if (useActiveSkill(g, performance.now())) {
+      resumeGameAudio();
+    }
+  }, []);
+
   const applyBomb = useCallback(() => {
     const g = gameRef.current;
     if (useBomb(g, performance.now())) {
@@ -2886,6 +3204,10 @@ export default function Home() {
       setPlayingPlane(plane);
       setBombCount(STARTING_BOMBS);
       bombsRef.current = STARTING_BOMBS;
+      skillUiRef.current = { ready: true, active: false, cooldownSec: 0 };
+      setSkillReady(true);
+      setSkillActive(false);
+      setSkillCooldownSec(0);
       beginPlaying(gameRef.current, plane, performance.now());
       uiPhaseRef.current = "playing";
       setUiPhase("playing");
@@ -2924,6 +3246,16 @@ export default function Home() {
         if (useBomb(g, performance.now())) {
           bombsRef.current = g.bombs;
           setBombCount(g.bombs);
+          resumeGameAudio();
+        }
+        e.preventDefault();
+        return;
+      }
+      if (
+        g.phase === "playing" &&
+        (e.key === "q" || e.key === "Q" || e.code === "KeyQ")
+      ) {
+        if (useActiveSkill(g, performance.now())) {
           resumeGameAudio();
         }
         e.preventDefault();
@@ -2975,6 +3307,10 @@ export default function Home() {
     setPlayingPlane(plane);
     setBombCount(STARTING_BOMBS);
     bombsRef.current = STARTING_BOMBS;
+    skillUiRef.current = { ready: true, active: false, cooldownSec: 0 };
+    setSkillReady(true);
+    setSkillActive(false);
+    setSkillCooldownSec(0);
     endedRef.current = false;
     rankingRef.current = loadRanking();
     const g = createGameModel();
@@ -3038,7 +3374,16 @@ export default function Home() {
               <div className="game-page__bottom-dock">
                 <ItemLegendDock plane={playingPlane} />
                 <VirtualJoystick onMove={applyJoystickMove} onEnd={applyJoystickEnd} />
-                <BombButton count={bombCount} onBomb={applyBomb} />
+                <div className="game-page__right-dock">
+                  <ActiveSkillButton
+                    plane={playingPlane}
+                    ready={skillReady}
+                    active={skillActive}
+                    cooldownSec={skillCooldownSec}
+                    onActivate={applyActiveSkill}
+                  />
+                  <BombButton count={bombCount} onBomb={applyBomb} />
+                </div>
               </div>
             </div>
           )}

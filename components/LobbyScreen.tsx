@@ -101,15 +101,15 @@ export function LobbyScreen({ version, onSelectPlane }: LobbyScreenProps) {
         <ul className="lobby-screen__control-list">
           <li>
             <span className="lobby-screen__control-key">PC</span>
-            WASD · 방향키 · 하단 키패드
+            WASD · Q 스킬 · B 폭탄
           </li>
           <li>
             <span className="lobby-screen__control-key">모바일</span>
-            하단 조이스틱 · 💣 폭탄(×200 ATK)
+            하단 조이스틱 · ⚡ 스킬 · 💣 폭탄(×200)
           </li>
           <li>
             <span className="lobby-screen__control-key">공통</span>
-            자동 발사 · Lv10 보스 · 스테이지마다 폭탄·생명(10%) 드랍
+            콤보·스테이지 보너스 · Lv10 보스 · 폭탄·생명(10%) 드랍
           </li>
         </ul>
       </section>

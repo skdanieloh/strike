@@ -905,6 +905,92 @@ body {
     flex: 1;
   }
 
+  .game-page__right-dock {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .skill-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    min-width: 0;
+    min-height: 88px;
+    width: 100%;
+    padding: 5px 8px;
+    border: 2px solid rgba(56, 189, 248, 0.42);
+    border-radius: 14px;
+    background: rgba(8, 47, 73, 0.55);
+    color: #bae6fd;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.12s, border-color 0.12s, background 0.12s;
+  }
+
+  .skill-button--laser {
+    border-color: rgba(192, 132, 252, 0.42);
+    background: rgba(59, 7, 100, 0.48);
+    color: #e9d5ff;
+  }
+
+  .skill-button:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+
+  .skill-button--active {
+    border-color: rgba(250, 204, 21, 0.75);
+    box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.25);
+  }
+
+  .skill-button--cooldown {
+    opacity: 0.48;
+    cursor: not-allowed;
+  }
+
+  .skill-button__ring {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid rgba(56, 189, 248, 0.35);
+    background: rgba(2, 6, 23, 0.45);
+  }
+
+  .skill-button--laser .skill-button__ring {
+    border-color: rgba(192, 132, 252, 0.35);
+  }
+
+  .skill-button__icon {
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  .skill-button__label {
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .skill-button__count {
+    font-size: 11px;
+    font-weight: 800;
+    color: #f8fafc;
+  }
+
+  .skill-button__hint {
+    font-size: 8px;
+    font-weight: 700;
+    opacity: 0.8;
+  }
+
   .bomb-button {
     display: flex;
     flex-direction: column;
@@ -912,8 +998,9 @@ body {
     justify-content: center;
     gap: 2px;
     min-width: 0;
-    min-height: 112px;
-    padding: 6px 8px;
+    min-height: 88px;
+    width: 100%;
+    padding: 5px 8px;
     border: 2px solid rgba(251, 146, 60, 0.45);
     border-radius: 16px;
     background: rgba(67, 20, 7, 0.55);
@@ -941,20 +1028,20 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 52px;
-    height: 52px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     border: 2px solid rgba(251, 146, 60, 0.35);
     background: rgba(2, 6, 23, 0.45);
   }
 
   .bomb-button__icon {
-    font-size: 26px;
+    font-size: 20px;
     line-height: 1;
   }
 
   .bomb-button__label {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 800;
     color: #fdba74;
   }
